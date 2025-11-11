@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+  
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum AssetStatus {
+  PROCUREMENT
+  COMMISSIONED
+  ALLOCATED
+  IN_OPERATION
+  MAINTENANCE
+  AUDIT
+  VALUATION
+  TRANSFER
+  DISPOSAL
+}
+
+enum MaintenanceType {
+  PREVENTIVE
+  BREAKDOWN
+  SCHEDULED
+}
+
+enum MaintenanceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DisposalStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  DISPOSED
+}
+
+model User {
+  id                     String                @id @default(uuid())
+  name                   String
+  email                  String                @unique
+  passwordHash           String
+  role                   UserRole              @default(USER)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  // Asset Owner
+  assets                 Asset[]
+
+  // Lifecycle actions performed by user
+  lifecycle              Lifecycle[]           @relation("UserLifecycle")
+
+  // Maintenance relations
+  maintenanceReported    Maintenance[]         @relation("MaintenanceReported")
+  maintenanceAssigned    Maintenance[]         @relation("MaintenanceAssigned")
+
+  // Allocation relations
+  allocationsAssigned    Allocation[]          @relation("AllocationAssigned")
+  allocationsReceived    Allocation[]          @relation("AllocationReceived")
+
+  // Transfer approvals
+  transferApproved       TransferRequest[]     @relation("TransferApproved")
+
+  // Disposal approvals
+  disposalApproved       DisposalRequest[]     @relation("DisposalApproved")
+
+  // Audit relations
+  audits                 Audit[]               @relation("UserAudits")
+}
+
+
+model Asset {
+  id            String          @id @default(uuid())
+  name          String
+  category      String
+  serialNumber  String?
+  price         Float?
+  status        AssetStatus      @default(PROCUREMENT)
+  location      String?
+  ownerUserId   String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  // Extra fields for real-world asset lifecycle
+  type                      String?
+  model                     String?
+  vendor                    String?
+  purchaseDate              DateTime?
+  purchaseCost              Float?
+  warrantyPeriodMonths      Int?
+  warrantyExpiry            DateTime?
+  department                String?
+  currentValue              Float?
+
+  // Relations
+  owner         User?           @relation(fields: [ownerUserId], references: [id])
+  lifecycle     Lifecycle[]
+  documents     AssetDocument[]
+  maintenance   Maintenance[]
+  allocations   Allocation[]
+  transfers     TransferRequest[]
+  disposals     DisposalRequest[]
+  audits        Audit[]
+}
+
+model Lifecycle {
+  id                String         @id @default(uuid())
+  assetId           String
+  performedBy       String?
+  stage             AssetStatus
+  notes             String?
+
+  // Metadata for lifecycle operations
+  scheduledDate     DateTime?
+  vendor            String?
+  estimatedCost     Float?
+  actualCost        Float?
+  location          String?
+  priority          String?
+  condition         String?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  asset             Asset           @relation(fields: [assetId], references: [id])
+  user              User?           @relation("UserLifecycle", fields: [performedBy], references: [id])
+}
+
+
+model Maintenance {
+  id            String              @id @default(uuid())
+  assetId       String
+  type          MaintenanceType
+  status        MaintenanceStatus     @default(SCHEDULED)
+  priority      MaintenancePriority   @default(MEDIUM)
+  vendor        String?
+  estimatedCost Float?
+  actualCost    Float?
+  reportedById  String?
+  assignedToId  String?
+  scheduledDate DateTime?
+  dueDate       DateTime?
+  notes         String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  asset         Asset                @relation(fields: [assetId], references: [id])
+  reportedBy    User?                @relation("MaintenanceReported", fields: [reportedById], references: [id])
+  assignedTo    User?                @relation("MaintenanceAssigned", fields: [assignedToId], references: [id])
+}
+
+
+model Allocation {
+  id              String      @id @default(uuid())
+  assetId         String
+  assignedToId    String?
+  assignedById    String?
+  department      String?
+  startDate       DateTime?
+  expectedReturn  DateTime?
+  status          String?     // Active, Returned, Temporary
+  notes           String?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  asset           Asset          @relation(fields: [assetId], references: [id])
+  assignedTo      User?          @relation("AllocationReceived", fields: [assignedToId], references: [id])
+  assignedBy      User?          @relation("AllocationAssigned", fields: [assignedById], references: [id])
+}
+
+
+model TransferRequest {
+  id              String      @id @default(uuid())
+  assetId         String
+  fromLocation    String?
+  toLocation      String?
+  reason          String?
+  approvedById    String?
+  scheduledDate   DateTime?
+  priority        String?
+  condition       String?
+  notes           String?
+  status          String?     // Pending, Approved, Completed
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  asset           Asset          @relation(fields: [assetId], references: [id])
+  approvedBy      User?          @relation("TransferApproved", fields: [approvedById], references: [id])
+}
+
+
+model DisposalRequest {
+  id              String         @id @default(uuid())
+  assetId         String
+  method          String?
+  reason          String?
+  estimatedValue  Float?
+  salvageValue    Float?
+  approvedById    String?
+  disposedDate    DateTime?
+  status          DisposalStatus  @default(REQUESTED)
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  asset           Asset           @relation(fields: [assetId], references: [id])
+  approvedBy      User?           @relation("DisposalApproved", fields: [approvedById], references: [id])
+}
+
+
+model AssetDocument {
+  id          String    @id @default(uuid())
+  assetId     String
+  fileName    String
+  fileType    String
+  fileUrl     String
+  uploadedAt  DateTime @default(now())
+
+  asset       Asset     @relation(fields: [assetId], references: [id])
+}
+
+model Property {
+  id          String             @id @default(uuid())
+  name        String
+  type        String?
+  location    String?
+  address     String?
+  area        Float?
+  ownership   String?
+  usage       String?
+  valuation   Float?
+  status      String?
+  notes       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  documents   PropertyDocument[]
+}
+
+model PropertyDocument {
+  id          String    @id @default(uuid())
+  propertyId  String
+  filename    String
+  path        String
+  type        String    // deed, image, etc
+  uploadedAt  DateTime  @default(now())
+
+  property    Property  @relation(fields: [propertyId], references: [id])
+}
+
+model ProcurementRequest {
+  id                String    @id @default(uuid())
+  itemName          String
+  category          String?
+  quantity          Int?
+  estimatedCost     Float?
+  vendor            String?
+  requestedBy       String?
+  status            String?   // Pending, Approved, Ordered, Received
+  priority          String?
+  justification     String?
+  quotationFile     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Request {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  requestedBy String?
+  status      String?   // Open, In Progress, Closed
+  priority    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+enum AuditCondition {
+  GOOD
+  MODERATE
+  DAMAGED
+}
+
+enum AuditVerificationStatus {
+  VERIFIED
+  NOT_FOUND
+  MOVED
+}
+
+model Audit {
+  id                String                  @id @default(uuid())
+  assetId           String
+  condition         AuditCondition
+  verificationStatus AuditVerificationStatus
+  remarks           String?
+  auditedBy         String?
+  auditedAt         DateTime                @default(now())
+
+  asset             Asset                   @relation(fields: [assetId], references: [id])
+  auditor           User?                   @relation("UserAudits", fields: [auditedBy], references: [id])
+}
