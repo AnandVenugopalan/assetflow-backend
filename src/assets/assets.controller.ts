@@ -8,6 +8,13 @@ import { RolesGuard } from '../users/roles.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { Request } from 'express';
+
+export const CurrentUser = createParamDecorator((data: unknown, ctx: ExecutionContext) => {
+	const request = ctx.switchToHttp().getRequest<Request>();
+	return request.user as { userId: string; email: string; role: string };
+});
 
 @Controller('assets')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -22,14 +29,14 @@ export class AssetsController {
 
 	@Get()
 	@Roles('ADMIN', 'MANAGER', 'USER')
-	findAll(@Query('status') status?: string, @Query('type') type?: string, @Query('q') q?: string) {
-		return this.assetsService.findAll({ status, type, q });
+	findAll(@CurrentUser() user: { userId: string; role: string }, @Query('status') status?: string, @Query('type') type?: string, @Query('q') q?: string, @Query('assignedTo') assignedTo?: string) {
+		return this.assetsService.findAll({ status, type, q, assignedTo }, user);
 	}
 
 	@Get(':id')
 	@Roles('ADMIN', 'MANAGER', 'USER')
-	findOne(@Param('id') id: string) {
-		return this.assetsService.findOne(id);
+	findOne(@Param('id') id: string, @CurrentUser() user: { userId: string; role: string }) {
+		return this.assetsService.findOne(id, user);
 	}
 
 	@Patch(':id')

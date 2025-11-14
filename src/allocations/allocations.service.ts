@@ -60,10 +60,13 @@ export class AllocationsService {
 				include: this.includeRelations(),
 			});
 
-			// Update asset status to ALLOCATED
+			// Update asset status to ALLOCATED and set permanent owner
 			await tx.asset.update({
 				where: { id: dto.assetId },
-				data: { status: 'ALLOCATED' },
+				data: {
+					assignedToId: dto.assignedToId,
+					status: 'ALLOCATED'
+				}
 			});
 
 			return allocation;
@@ -72,7 +75,14 @@ export class AllocationsService {
 
 	async update(id: string, dto: UpdateAllocationDto) {
 		await this.ensureExists(id);
-		return this.prisma.allocation.update({
+		
+		// Get the current allocation to check if assignedToId changed
+		const currentAllocation = await this.prisma.allocation.findUnique({
+			where: { id },
+			select: { assetId: true, assignedToId: true }
+		});
+		
+		const updatedAllocation = await this.prisma.allocation.update({
 			where: { id },
 			data: {
 				assignedToId: dto.assignedToId,
@@ -84,6 +94,19 @@ export class AllocationsService {
 			},
 			include: this.includeRelations(),
 		});
+		
+		// If assignedToId changed, update the asset
+		if (dto.assignedToId && dto.assignedToId !== currentAllocation?.assignedToId) {
+			await this.prisma.asset.update({
+				where: { id: updatedAllocation.assetId },
+				data: {
+					assignedToId: dto.assignedToId,
+					status: 'ALLOCATED'
+				}
+			});
+		}
+		
+		return updatedAllocation;
 	}
 
 	async checkIn(id: string) {

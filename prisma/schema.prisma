@@ -62,6 +62,7 @@ model User {
 
   // Asset Owner
   assets                 Asset[]
+  assetsAssigned         Asset[]               @relation("AssetAssignedTo")
 
   // Lifecycle actions performed by user
   lifecycle              Lifecycle[]           @relation("UserLifecycle")
@@ -94,6 +95,7 @@ model Asset {
   status        AssetStatus      @default(PROCUREMENT)
   location      String?
   ownerUserId   String?
+  assignedToId  String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -111,6 +113,7 @@ model Asset {
 
   // Relations
   owner         User?           @relation(fields: [ownerUserId], references: [id])
+  assignedTo    User?           @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
   procurementRequest ProcurementRequest? @relation(fields: [procurementRequestId], references: [id])
   lifecycle     Lifecycle[]
   documents     AssetDocument[]

@@ -16,19 +16,30 @@ export class AssetsService {
 		});
 	}
 
-	findAll(params?: { status?: string; type?: string; q?: string }) {
+	findAll(params?: { status?: string; type?: string; q?: string; assignedTo?: string }, user?: { userId: string; role: string }) {
 		const where: any = {};
-		if (params?.status) {
+		
+		// Handle assignedTo filter
+		if (params?.assignedTo) {
+			// If assignedTo query param exists, filter by it
+			where.assignedToId = params.assignedTo;
+		} else if (user?.role === 'USER') {
+			// USER role: automatically enforce assignedToId = request.user.id when no explicit filter
+			where.assignedToId = user.userId;
+		}
+		
+		// Apply other filters for ADMIN/MANAGER or when assignedTo filter is provided
+		if (params?.status && (user?.role !== 'USER' || params?.assignedTo)) {
 			where.status = params.status as any;
 		}
-		if (params?.type) {
+		if (params?.type && (user?.role !== 'USER' || params?.assignedTo)) {
 			// UI uses "type" which maps to our optional Asset.type field or category
 			where.OR = [
 				{ type: { equals: params.type, mode: 'insensitive' } },
 				{ category: { equals: params.type, mode: 'insensitive' } },
 			];
 		}
-		if (params?.q) {
+		if (params?.q && (user?.role !== 'USER' || params?.assignedTo)) {
 			const q = params.q;
 			where.AND = [
 				{
@@ -41,19 +52,32 @@ export class AssetsService {
 				},
 			];
 		}
+		
 		return this.prisma.asset.findMany({
 			where,
 			orderBy: { createdAt: 'desc' },
-			include: { owner: { select: { id: true, name: true, email: true } } },
+			include: { 
+				owner: { select: { id: true, name: true, email: true } },
+				assignedTo: { select: { id: true, name: true, email: true } }
+			},
 		});
 	}
 
-	async findOne(id: string) {
+	async findOne(id: string, user?: { userId: string; role: string }) {
 		const asset = await this.prisma.asset.findUnique({
 			where: { id },
-			include: { owner: { select: { id: true, name: true, email: true } } },
+			include: { 
+				owner: { select: { id: true, name: true, email: true } },
+				assignedTo: { select: { id: true, name: true, email: true } }
+			},
 		});
 		if (!asset) throw new NotFoundException('Asset not found');
+		
+		// Role-based access control
+		if (user?.role === 'USER' && asset.assignedToId !== user.userId) {
+			throw new NotFoundException('Asset not found');
+		}
+		
 		return asset;
 	}
 

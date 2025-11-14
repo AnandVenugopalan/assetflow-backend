@@ -36,14 +36,18 @@ export class MaintenanceService {
 	}
 
 	async create(dto: CreateMaintenanceDto, user: { userId: string; role: string }) {
+		// Ensure enums are uppercase
+		dto.type = dto.type.toUpperCase();
+		dto.priority = dto.priority.toUpperCase();
+
 		// Validate asset ownership for USER role
 		if (user.role === 'USER') {
 			const asset = await this.prisma.asset.findUnique({
 				where: { id: dto.assetId },
-				select: { ownerUserId: true },
+				select: { assignedToId: true },
 			});
-			if (!asset || asset.ownerUserId !== user.userId) {
-				throw new Error('You can only create maintenance requests for your own assets');
+			if (!asset || asset.assignedToId !== user.userId) {
+				throw new Error('You can only create maintenance requests for your assigned assets');
 			}
 		}
 
