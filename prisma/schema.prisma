@@ -107,9 +107,11 @@ model Asset {
   warrantyExpiry            DateTime?
   department                String?
   currentValue              Float?
+  procurementRequestId      String?
 
   // Relations
   owner         User?           @relation(fields: [ownerUserId], references: [id])
+  procurementRequest ProcurementRequest? @relation(fields: [procurementRequestId], references: [id])
   lifecycle     Lifecycle[]
   documents     AssetDocument[]
   maintenance   Maintenance[]
@@ -278,8 +280,14 @@ model ProcurementRequest {
   priority          String?
   justification     String?
   quotationFile     String?
+  approvedBy        String?
+  approvedAt        DateTime?
+  rejectionReason   String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  // Relations
+  assets            Asset[]
 }
 
 model Request {

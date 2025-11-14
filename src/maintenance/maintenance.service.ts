@@ -15,22 +15,38 @@ export class MaintenanceService {
 		};
 	}
 
-	async list(params: { page?: number; pageSize?: number }) {
+	async list(params: { page?: number; pageSize?: number }, user?: { userId: string; role: string }) {
 		const page = Math.max(1, params.page ?? 1);
 		const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
+		const where: any = {};
+		if (user?.role === 'USER') {
+			where.reportedById = user.userId;
+		}
 		const [items, total] = await this.prisma.$transaction([
 			this.prisma.maintenance.findMany({
+				where,
 				orderBy: { createdAt: 'desc' },
 				skip: (page - 1) * pageSize,
 				take: pageSize,
 				include: this.includeRelations(),
 			}),
-			this.prisma.maintenance.count(),
+			this.prisma.maintenance.count({ where }),
 		]);
 		return { items, page, pageSize, total };
 	}
 
-	async create(dto: CreateMaintenanceDto) {
+	async create(dto: CreateMaintenanceDto, user: { userId: string; role: string }) {
+		// Validate asset ownership for USER role
+		if (user.role === 'USER') {
+			const asset = await this.prisma.asset.findUnique({
+				where: { id: dto.assetId },
+				select: { ownerUserId: true },
+			});
+			if (!asset || asset.ownerUserId !== user.userId) {
+				throw new Error('You can only create maintenance requests for your own assets');
+			}
+		}
+
 		return this.prisma.$transaction(async (tx) => {
 			// Create the maintenance record
 			const maintenance = await tx.maintenance.create({
@@ -44,7 +60,7 @@ export class MaintenanceService {
 				scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : undefined,
 				dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
 				notes: dto.notes,
-				reportedById: dto.reportedById,
+				reportedById: user.userId,
 				assignedToId: dto.assignedToId,
 			},
 				include: this.includeRelations(),

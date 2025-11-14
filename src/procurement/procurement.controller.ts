@@ -16,9 +16,17 @@ import { diskStorage } from 'multer';
 import { ProcurementService } from './procurement.service';
 import { CreateProcurementDto } from './dto/create-procurement.dto';
 import { UpdateProcurementDto } from './dto/update-procurement.dto';
+import { ApproveProcurementDto } from './dto/approve-procurement.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../users/roles.decorator';
 import { RolesGuard } from '../users/roles.guard';
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { Request } from 'express';
+
+export const CurrentUser = createParamDecorator((data: unknown, ctx: ExecutionContext) => {
+  const request = ctx.switchToHttp().getRequest<Request>();
+  return request.user as { userId: string; email: string; role: string };
+});
 
 @Controller('procurement')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -103,6 +111,26 @@ export class ProcurementController {
       return await this.procurementService.getWorkflowStats();
     } catch (error) {
       throw new HttpException('Failed to fetch workflow stats', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Patch('requests/:id/approve')
+  @Roles('MANAGER')
+  async approve(@Param('id') id: string, @Body() dto: ApproveProcurementDto, @CurrentUser() user: { userId: string }) {
+    try {
+      return await this.procurementService.approveRequest(id, user.userId, dto.reason);
+    } catch (error) {
+      throw new HttpException(error.message || 'Failed to approve procurement request', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Patch('requests/:id/reject')
+  @Roles('MANAGER')
+  async reject(@Param('id') id: string, @Body() dto: ApproveProcurementDto, @CurrentUser() user: { userId: string }) {
+    try {
+      return await this.procurementService.rejectRequest(id, user.userId, dto.reason);
+    } catch (error) {
+      throw new HttpException(error.message || 'Failed to reject procurement request', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }

@@ -32,6 +32,18 @@ export class AllocationsService {
 	}
 
 	async create(dto: CreateAllocationDto) {
+		// Check if asset exists and is in COMMISSIONED status
+		const asset = await this.prisma.asset.findUnique({
+			where: { id: dto.assetId },
+			select: { id: true, status: true },
+		});
+		if (!asset) {
+			throw new NotFoundException('Asset not found');
+		}
+		if (asset.status !== 'COMMISSIONED') {
+			throw new Error('Asset must be in COMMISSIONED status to be allocated');
+		}
+
 		return this.prisma.$transaction(async (tx) => {
 			// Create the allocation
 			const allocation = await tx.allocation.create({
