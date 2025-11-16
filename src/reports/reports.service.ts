@@ -24,8 +24,8 @@ export class ReportsService {
       _count: true,
     });
 
-    const totalDisposals = await this.prisma.disposalRequest.count();
-    const disposalsByStatus = await this.prisma.disposalRequest.groupBy({
+    const totalDisposals = await this.prisma.disposal.count();
+    const disposalsByStatus = await this.prisma.disposal.groupBy({
       by: ['status'],
       _count: true,
     });

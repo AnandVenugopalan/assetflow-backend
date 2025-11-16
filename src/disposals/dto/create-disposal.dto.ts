@@ -1,17 +1,20 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateDisposalDto {
 	@IsString()
 	assetId: string;
 
-	@IsOptional()
 	@IsString()
-	method?: string; // Sale, Scrap, Donation, etc.
+	@MaxLength(500)
+	reason: string;
+
+	@IsString()
+	@MaxLength(1000)
+	description: string;
 
 	@IsOptional()
 	@IsString()
-	@MaxLength(1000)
-	reason?: string;
+	method?: string; // Sale, Scrap, Donation, etc.
 
 	@IsOptional()
 	@IsNumber()
@@ -20,14 +23,6 @@ export class CreateDisposalDto {
 	@IsOptional()
 	@IsNumber()
 	salvageValue?: number;
-
-	@IsOptional()
-	@IsString()
-	approvedById?: string;
-
-	@IsOptional()
-	@IsDateString()
-	disposedDate?: string;
 
 	@IsOptional()
 	@IsIn(['REQUESTED', 'APPROVED', 'REJECTED', 'DISPOSED'])

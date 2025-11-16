@@ -1,14 +1,13 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class UpdateDisposalDto {
 	@IsOptional()
-	@IsString()
-	method?: string;
+	@IsIn(['REQUESTED', 'APPROVED', 'REJECTED', 'DISPOSED'])
+	status?: string;
 
 	@IsOptional()
 	@IsString()
-	@MaxLength(1000)
-	reason?: string;
+	method?: string;
 
 	@IsOptional()
 	@IsNumber()
@@ -17,18 +16,6 @@ export class UpdateDisposalDto {
 	@IsOptional()
 	@IsNumber()
 	salvageValue?: number;
-
-	@IsOptional()
-	@IsString()
-	approvedById?: string;
-
-	@IsOptional()
-	@IsDateString()
-	disposedDate?: string;
-
-	@IsOptional()
-	@IsIn(['REQUESTED', 'APPROVED', 'REJECTED', 'DISPOSED'])
-	status?: string; // REQUESTED | APPROVED | REJECTED | DISPOSED
 }
 
 

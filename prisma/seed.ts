@@ -236,14 +236,15 @@ async function main() {
   // 6️⃣ Disposal stage
   // ============================
 
-  await prisma.disposalRequest.create({
+  await prisma.disposal.create({
     data: {
       assetId: asset3.id,
-      method: 'Sale',
+      requestedById: adminUser.id,
       reason: 'Outdated technology',
+      description: 'Asset is outdated and no longer needed',
+      method: 'Sale',
       estimatedValue: 200,
       salvageValue: 150,
-      approvedById: adminUser.id,
       status: 'APPROVED',
     },
   });
