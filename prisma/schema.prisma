@@ -78,8 +78,8 @@ model User {
   // Transfer approvals
   transferApproved       TransferRequest[]     @relation("TransferApproved")
 
-  // Disposal approvals
-  disposalApproved       DisposalRequest[]     @relation("DisposalApproved")
+  // Disposal requests
+  disposalRequested      Disposal[]            @relation("DisposalRequested")
 
   // Audit relations
   audits                 Audit[]               @relation("UserAudits")
@@ -120,7 +120,7 @@ model Asset {
   maintenance   Maintenance[]
   allocations   Allocation[]
   transfers     TransferRequest[]
-  disposals     DisposalRequest[]
+  disposals     Disposal[]
   audits        Audit[]
 }
 
@@ -209,25 +209,6 @@ model TransferRequest {
 
   asset           Asset          @relation(fields: [assetId], references: [id])
   approvedBy      User?          @relation("TransferApproved", fields: [approvedById], references: [id])
-}
-
-
-model DisposalRequest {
-  id              String         @id @default(uuid())
-  assetId         String
-  method          String?
-  reason          String?
-  estimatedValue  Float?
-  salvageValue    Float?
-  approvedById    String?
-  disposedDate    DateTime?
-  status          DisposalStatus  @default(REQUESTED)
-
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  asset           Asset           @relation(fields: [assetId], references: [id])
-  approvedBy      User?           @relation("DisposalApproved", fields: [approvedById], references: [id])
 }
 
 
@@ -327,4 +308,19 @@ model Audit {
 
   asset             Asset                   @relation(fields: [assetId], references: [id])
   auditor           User?                   @relation("UserAudits", fields: [auditedBy], references: [id])
+}
+
+model Disposal {
+  id            String   @id @default(uuid())
+  assetId       String
+  asset         Asset    @relation(fields: [assetId], references: [id])
+  requestedById String
+  requestedBy   User     @relation("DisposalRequested", fields: [requestedById], references: [id])
+  reason        String
+  description   String
+  status        DisposalStatus @default(REQUESTED)
+  method        String?
+  estimatedValue Float?
+  salvageValue   Float?
+  createdAt     DateTime @default(now())
 }
