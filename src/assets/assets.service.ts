@@ -2,18 +2,78 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
+import * as QRCode from 'qrcode';
 
 @Injectable()
 export class AssetsService {
 	constructor(private readonly prisma: PrismaService) {}
 
-	create(dto: CreateAssetDto) {
-		return this.prisma.asset.create({
+	async create(dto: CreateAssetDto) {
+		// First create the asset to get its ID
+		const asset = await this.prisma.asset.create({
 			data: {
 				...dto,
 				status: dto.status as any,
+				purchaseDate: dto.purchaseDate ? new Date(dto.purchaseDate) : undefined,
 			},
 		});
+
+		// Generate QR code containing the asset ID
+		// The QR code will store the asset ID which can be used to fetch details
+		const qrCodeData = JSON.stringify({
+			assetId: asset.id,
+			name: asset.name,
+			category: asset.category,
+		});
+
+		// Generate QR code as base64 data URL
+		const qrCodeImage = await QRCode.toDataURL(qrCodeData, {
+			errorCorrectionLevel: 'H',
+			type: 'image/png',
+			width: 300,
+			margin: 1,
+		});
+
+		// Update asset with QR code
+		return this.prisma.asset.update({
+			where: { id: asset.id },
+			data: { qrCode: qrCodeImage },
+		});
+	}
+
+	// Public method for QR code scanning - returns basic asset info
+	async findByQR(id: string) {
+		const asset = await this.prisma.asset.findUnique({
+			where: { id },
+			include: {
+				owner: { select: { id: true, name: true, email: true } },
+				assignedTo: { select: { id: true, name: true, email: true } },
+			},
+		});
+
+		if (!asset) {
+			throw new NotFoundException('Asset not found');
+		}
+
+		// Return all asset details (you can customize what to show)
+		return {
+			id: asset.id,
+			name: asset.name,
+			category: asset.category,
+			serialNumber: asset.serialNumber,
+			status: asset.status,
+			location: asset.location,
+			vendor: asset.vendor,
+			department: asset.department,
+			purchaseDate: asset.purchaseDate,
+			purchaseCost: asset.purchaseCost,
+			description: asset.description,
+			warrantyExpiry: asset.warrantyExpiry,
+			assignedTo: asset.assignedTo,
+			qrCode: asset.qrCode,
+			createdAt: asset.createdAt,
+			updatedAt: asset.updatedAt,
+		};
 	}
 
 	findAll(params?: { status?: string; type?: string; q?: string; assignedTo?: string }, user?: { userId: string; role: string }) {
