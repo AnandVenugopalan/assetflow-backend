@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, IsDateString } from 'class-validator';
 
 export class CreateAssetDto {
 	@IsString()
@@ -26,6 +26,26 @@ export class CreateAssetDto {
 	@IsOptional()
 	@IsString()
 	ownerUserId?: string;
+
+	@IsOptional()
+	@IsString()
+	vendor?: string;
+
+	@IsOptional()
+	@IsString()
+	department?: string;
+
+	@IsOptional()
+	@IsNumber()
+	purchaseCost?: number;
+
+	@IsOptional()
+	@IsDateString()
+	purchaseDate?: string;
+
+	@IsOptional()
+	@IsString()
+	description?: string;
 }
 
 

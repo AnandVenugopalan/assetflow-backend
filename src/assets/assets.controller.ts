@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors, SetMetadata } from '@nestjs/common';
 import { AssetsService } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
@@ -11,47 +11,61 @@ import { extname } from 'path';
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { Request } from 'express';
 
+export const IS_PUBLIC_KEY = 'isPublic';
+export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+
 export const CurrentUser = createParamDecorator((data: unknown, ctx: ExecutionContext) => {
 	const request = ctx.switchToHttp().getRequest<Request>();
 	return request.user as { userId: string; email: string; role: string };
 });
 
 @Controller('assets')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
 export class AssetsController {
 	constructor(private readonly assetsService: AssetsService) {}
 
 	@Post()
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
 	@Roles('ADMIN', 'MANAGER')
 	create(@Body() dto: CreateAssetDto) {
 		return this.assetsService.create(dto);
 	}
 
+	// Public endpoint for QR code scanning - no authentication required
+	@Get('qr/:id')
+	findByQR(@Param('id') id: string) {
+		return this.assetsService.findByQR(id);
+	}
+
 	@Get()
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
 	@Roles('ADMIN', 'MANAGER', 'USER')
 	findAll(@CurrentUser() user: { userId: string; role: string }, @Query('status') status?: string, @Query('type') type?: string, @Query('q') q?: string, @Query('assignedTo') assignedTo?: string) {
 		return this.assetsService.findAll({ status, type, q, assignedTo }, user);
 	}
 
 	@Get(':id')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
 	@Roles('ADMIN', 'MANAGER', 'USER')
 	findOne(@Param('id') id: string, @CurrentUser() user: { userId: string; role: string }) {
 		return this.assetsService.findOne(id, user);
 	}
 
 	@Patch(':id')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
 	@Roles('ADMIN', 'MANAGER')
 	update(@Param('id') id: string, @Body() dto: UpdateAssetDto) {
 		return this.assetsService.update(id, dto);
 	}
 
 	@Delete(':id')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
 	@Roles('ADMIN')
 	remove(@Param('id') id: string) {
 		return this.assetsService.remove(id);
 	}
 
 	@Post(':id/documents')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
 	@Roles('ADMIN', 'MANAGER')
 	@UseInterceptors(
 		FileInterceptor('file', {
@@ -74,12 +88,14 @@ export class AssetsController {
 	}
 
 	@Get(':id/documents')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
 	@Roles('ADMIN', 'MANAGER', 'USER')
 	listDocuments(@Param('id') id: string) {
 		return this.assetsService.listDocuments(id);
 	}
 
 	@Delete(':id/documents/:docId')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
 	@Roles('ADMIN', 'MANAGER')
 	deleteDocument(@Param('id') id: string, @Param('docId') docId: string) {
 		return this.assetsService.deleteDocument(id, docId);

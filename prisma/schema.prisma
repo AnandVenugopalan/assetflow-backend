@@ -110,6 +110,8 @@ model Asset {
   department                String?
   currentValue              Float?
   procurementRequestId      String?
+  qrCode                    String?              // Base64 encoded QR code image
+  description               String?              // Asset description
 
   // Relations
   owner         User?           @relation(fields: [ownerUserId], references: [id])
