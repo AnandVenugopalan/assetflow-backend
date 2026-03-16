@@ -152,6 +152,27 @@ export class MaintenanceService {
 			return maintenance;
 		});
 
+		// Send notification when status changes to IN_PROGRESS (maintenance approved/started)
+		if (dto.status === 'IN_PROGRESS' && currentMaintenance && currentMaintenance.status !== 'IN_PROGRESS') {
+			try {
+				const asset = await this.prisma.asset.findUnique({
+					where: { id: currentMaintenance.assetId },
+					select: { name: true },
+				});
+
+				if (asset && currentMaintenance.reportedById) {
+					await this.notificationsService.sendNotificationToUser(currentMaintenance.reportedById, {
+						title: 'Maintenance Request Approved',
+						message: `Your maintenance request for ${asset.name} has been approved and work has started.`,
+						type: 'MAINTENANCE_APPROVED',
+					});
+				}
+			} catch (error) {
+				console.error('Failed to send maintenance approval notification:', error);
+				// Don't throw, as the update was successful
+			}
+		}
+
 		// Send notification to the user who reported the maintenance when completed
 		if (dto.status === 'COMPLETED' && currentMaintenance && currentMaintenance.status !== 'COMPLETED') {
 			try {
