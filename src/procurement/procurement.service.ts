@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateProcurementDto } from './dto/create-procurement.dto';
 import { UpdateProcurementDto } from './dto/update-procurement.dto';
 
 @Injectable()
 export class ProcurementService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async findAll() {
     return this.prisma.procurementRequest.findMany({
@@ -20,12 +24,26 @@ export class ProcurementService {
   }
 
   async create(createProcurementDto: CreateProcurementDto) {
-    return this.prisma.procurementRequest.create({
+    const procurementRequest = await this.prisma.procurementRequest.create({
       data: {
         ...createProcurementDto,
         status: 'Pending',
       },
     });
+
+    // Send notification to all managers
+    try {
+      await this.notificationsService.sendNotificationToRole('MANAGER', {
+        title: 'New Procurement Request',
+        message: `Admin ${createProcurementDto.requestedBy} has submitted a procurement request for ${createProcurementDto.quantity} ${createProcurementDto.itemName}.`,
+        type: 'PROCUREMENT_REQUEST',
+      });
+    } catch (error) {
+      console.error('Failed to send notification:', error);
+      // Don't throw, as the procurement request was created successfully
+    }
+
+    return procurementRequest;
   }
 
   async update(id: string, updateProcurementDto: UpdateProcurementDto) {
