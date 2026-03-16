@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAllocationDto } from './dto/create-allocation.dto';
 import { UpdateAllocationDto } from './dto/update-allocation.dto';
 
 @Injectable()
 export class AllocationsService {
-	constructor(private readonly prisma: PrismaService) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly notificationsService: NotificationsService,
+	) {}
 
 	private includeRelations() {
 		return {
@@ -35,7 +39,7 @@ export class AllocationsService {
 		// Check if asset exists and is in COMMISSIONED status
 		const asset = await this.prisma.asset.findUnique({
 			where: { id: dto.assetId },
-			select: { id: true, status: true },
+			select: { id: true, status: true, name: true },
 		});
 		if (!asset) {
 			throw new NotFoundException('Asset not found');
@@ -44,7 +48,13 @@ export class AllocationsService {
 			throw new Error('Asset must be in COMMISSIONED status to be allocated');
 		}
 
-		return this.prisma.$transaction(async (tx) => {
+		// Fetch assigned user details for notification
+		const assignedUser = await this.prisma.user.findUnique({
+			where: { id: dto.assignedToId },
+			select: { id: true, name: true },
+		});
+
+		const allocation = await this.prisma.$transaction(async (tx) => {
 			// Create the allocation
 			const allocation = await tx.allocation.create({
 				data: {
@@ -71,6 +81,22 @@ export class AllocationsService {
 
 			return allocation;
 		});
+
+		// Send notification to the user who received the asset allocation (after transaction)
+		if (assignedUser) {
+			try {
+				await this.notificationsService.sendNotificationToUser(assignedUser.id, {
+					title: 'Asset Allocated to You',
+					message: `You have been allocated a ${asset.name}. Department: ${dto.department}. ${dto.notes ? `Notes: ${dto.notes}` : ''}`,
+					type: 'ASSET_ALLOCATED',
+				});
+			} catch (error) {
+				console.error('Failed to send allocation notification:', error);
+				// Don't throw, as the allocation was created successfully
+			}
+		}
+
+		return allocation;
 	}
 
 	async update(id: string, dto: UpdateAllocationDto) {
@@ -95,7 +121,7 @@ export class AllocationsService {
 			include: this.includeRelations(),
 		});
 		
-		// If assignedToId changed, update the asset
+		// If assignedToId changed, update the asset and send notification
 		if (dto.assignedToId && dto.assignedToId !== currentAllocation?.assignedToId) {
 			await this.prisma.asset.update({
 				where: { id: updatedAllocation.assetId },
@@ -104,6 +130,30 @@ export class AllocationsService {
 					status: 'ALLOCATED'
 				}
 			});
+
+			// Send notification to the newly assigned user
+			try {
+				const asset = await this.prisma.asset.findUnique({
+					where: { id: currentAllocation?.assetId },
+					select: { name: true },
+				});
+
+				const newAssignedUser = await this.prisma.user.findUnique({
+					where: { id: dto.assignedToId },
+					select: { id: true, name: true },
+				});
+
+				if (asset && newAssignedUser) {
+					await this.notificationsService.sendNotificationToUser(newAssignedUser.id, {
+						title: 'Asset Reassigned to You',
+						message: `You have been reassigned a ${asset.name}. Department: ${dto.department}. ${dto.notes ? `Notes: ${dto.notes}` : ''}`,
+						type: 'ASSET_REASSIGNED',
+					});
+				}
+			} catch (error) {
+				console.error('Failed to send reassignment notification:', error);
+				// Don't throw, as the update was successful
+			}
 		}
 		
 		return updatedAllocation;
