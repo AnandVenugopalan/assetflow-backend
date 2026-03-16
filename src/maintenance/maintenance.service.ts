@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateMaintenanceDto } from './dto/create-maintenance.dto';
 import { UpdateMaintenanceDto } from './dto/update-maintenance.dto';
 
 @Injectable()
 export class MaintenanceService {
-	constructor(private readonly prisma: PrismaService) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly notificationsService: NotificationsService,
+	) {}
 
 	private includeRelations() {
 		return {
@@ -51,7 +55,17 @@ export class MaintenanceService {
 			}
 		}
 
-		return this.prisma.$transaction(async (tx) => {
+		// Fetch asset details for notification
+		const asset = await this.prisma.asset.findUnique({
+			where: { id: dto.assetId },
+			select: { id: true, name: true },
+		});
+
+		if (!asset) {
+			throw new NotFoundException('Asset not found');
+		}
+
+		const maintenance = await this.prisma.$transaction(async (tx) => {
 			// Create the maintenance record
 			const maintenance = await tx.maintenance.create({
 			data: {
@@ -78,6 +92,20 @@ export class MaintenanceService {
 
 			return maintenance;
 		});
+
+		// Send notification to all ADMIN users
+		try {
+			await this.notificationsService.sendNotificationToRole('ADMIN', {
+				title: 'New Maintenance Request',
+				message: `A maintenance request of type ${dto.type} has been submitted for ${asset.name} with priority ${dto.priority}.`,
+				type: 'MAINTENANCE_REQUEST',
+			});
+		} catch (error) {
+			console.error('Failed to send maintenance notification:', error);
+			// Don't throw, as the maintenance request was created successfully
+		}
+
+		return maintenance;
 	}
 
 	async update(id: string, dto: UpdateMaintenanceDto) {
@@ -87,13 +115,13 @@ export class MaintenanceService {
 		if (dto.priority) dto.priority = dto.priority.toUpperCase();
 		if (dto.status) dto.status = dto.status.toUpperCase();
 		
-		return this.prisma.$transaction(async (tx) => {
-			// Get current maintenance record to check status change
-			const currentMaintenance = await tx.maintenance.findUnique({
-				where: { id },
-				select: { assetId: true, status: true },
-			});
+		// Get current maintenance record before updating
+		const currentMaintenance = await this.prisma.maintenance.findUnique({
+			where: { id },
+			select: { assetId: true, status: true, reportedById: true },
+		});
 
+		const maintenance = await this.prisma.$transaction(async (tx) => {
 			// Update the maintenance record
 			const maintenance = await tx.maintenance.update({
 				where: { id },
@@ -123,6 +151,29 @@ export class MaintenanceService {
 
 			return maintenance;
 		});
+
+		// Send notification to the user who reported the maintenance when completed
+		if (dto.status === 'COMPLETED' && currentMaintenance && currentMaintenance.status !== 'COMPLETED') {
+			try {
+				const asset = await this.prisma.asset.findUnique({
+					where: { id: currentMaintenance.assetId },
+					select: { name: true },
+				});
+
+				if (asset && currentMaintenance.reportedById) {
+					await this.notificationsService.sendNotificationToUser(currentMaintenance.reportedById, {
+						title: 'Maintenance Completed',
+						message: `Your maintenance request for ${asset.name} has been completed.`,
+						type: 'MAINTENANCE_COMPLETED',
+					});
+				}
+			} catch (error) {
+				console.error('Failed to send maintenance completion notification:', error);
+				// Don't throw, as the update was successful
+			}
+		}
+
+		return maintenance;
 	}
 
 	private async ensureExists(id: string) {
