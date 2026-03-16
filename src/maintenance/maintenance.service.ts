@@ -82,6 +82,10 @@ export class MaintenanceService {
 
 	async update(id: string, dto: UpdateMaintenanceDto) {
 		await this.ensureExists(id);
+
+		if (dto.type) dto.type = dto.type.toUpperCase();
+		if (dto.priority) dto.priority = dto.priority.toUpperCase();
+		if (dto.status) dto.status = dto.status.toUpperCase();
 		
 		return this.prisma.$transaction(async (tx) => {
 			// Get current maintenance record to check status change

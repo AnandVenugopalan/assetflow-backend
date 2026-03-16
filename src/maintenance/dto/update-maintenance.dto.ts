@@ -1,16 +1,16 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class UpdateMaintenanceDto {
 	@IsOptional()
-	@IsIn(['PREVENTIVE', 'BREAKDOWN', 'SCHEDULED'])
+	@Matches(/^(PREVENTIVE|BREAKDOWN|SCHEDULED)$/i)
 	type?: string;
 
 	@IsOptional()
-	@IsIn(['LOW', 'MEDIUM', 'HIGH'])
+	@Matches(/^(LOW|MEDIUM|HIGH)$/i)
 	priority?: string;
 
 	@IsOptional()
-	@IsIn(['SCHEDULED', 'IN_PROGRESS', 'COMPLETED'])
+	@Matches(/^(SCHEDULED|IN_PROGRESS|COMPLETED)$/i)
 	status?: string;
 
 	@IsOptional()
