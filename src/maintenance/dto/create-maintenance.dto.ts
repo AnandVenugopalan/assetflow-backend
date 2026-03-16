@@ -1,13 +1,13 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class CreateMaintenanceDto {
 	@IsString()
 	assetId: string;
 
-	@IsIn(['PREVENTIVE', 'BREAKDOWN', 'SCHEDULED'])
+	@Matches(/^(PREVENTIVE|BREAKDOWN|SCHEDULED)$/i)
 	type: string;
 
-	@IsIn(['LOW', 'MEDIUM', 'HIGH'])
+	@Matches(/^(LOW|MEDIUM|HIGH)$/i)
 	priority: string;
 
 	@IsOptional()
