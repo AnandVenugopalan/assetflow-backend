@@ -55,9 +55,9 @@ export class ProcurementController {
 
   @Post('requests')
   @Roles('ADMIN', 'MANAGER')
-  async create(@Body() createProcurementDto: CreateProcurementDto) {
+  async create(@Body() createProcurementDto: CreateProcurementDto, @CurrentUser() user: { userId: string }) {
     try {
-      return await this.procurementService.create(createProcurementDto);
+      return await this.procurementService.create(createProcurementDto, user.userId);
     } catch (error) {
       throw new HttpException('Failed to create procurement request', HttpStatus.INTERNAL_SERVER_ERROR);
     }

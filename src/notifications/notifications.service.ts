@@ -56,6 +56,42 @@ export class NotificationsService {
   }
 
   /**
+   * Send notification to a specific user
+   * @param userId - The ID of the user to notify
+   * @param notificationData - The notification data containing title, message, and type
+   */
+  async sendNotificationToUser(
+    userId: string,
+    notificationData: NotificationData,
+  ): Promise<any> {
+    // Verify user exists
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return { success: false, message: 'User not found' };
+    }
+
+    // Create notification for the user
+    const notification = await this.prisma.notification.create({
+      data: {
+        userId,
+        title: notificationData.title,
+        message: notificationData.message,
+        type: notificationData.type,
+        isRead: false,
+      },
+    });
+
+    return {
+      success: true,
+      notification,
+    };
+  }
+
+  /**
    * Get all unread notifications for a user
    */
   async getUnreadNotifications(userId: string): Promise<any> {

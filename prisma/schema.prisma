@@ -86,6 +86,9 @@ model User {
 
   // Notifications
   notifications          Notification[]        @relation("UserNotifications")
+
+  // Procurement requests created
+  procurementRequests    ProcurementRequest[]  @relation("ProcurementRequests")
 }
 
 
@@ -265,6 +268,7 @@ model ProcurementRequest {
   estimatedCost     Float?
   vendor            String?
   requestedBy       String?
+  requestedByUserId String?
   status            String?   // Pending, Approved, Ordered, Received
   priority          String?
   justification     String?
@@ -276,6 +280,7 @@ model ProcurementRequest {
   updatedAt         DateTime  @updatedAt
 
   // Relations
+  requestedByUser   User?     @relation("ProcurementRequests", fields: [requestedByUserId], references: [id], onDelete: SetNull)
   assets            Asset[]
 }
 
