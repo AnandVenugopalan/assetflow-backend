@@ -83,6 +83,12 @@ model User {
 
   // Audit relations
   audits                 Audit[]               @relation("UserAudits")
+
+  // Notifications
+  notifications          Notification[]        @relation("UserNotifications")
+
+  // Procurement requests created
+  procurementRequests    ProcurementRequest[]  @relation("ProcurementRequests")
 }
 
 
@@ -262,6 +268,7 @@ model ProcurementRequest {
   estimatedCost     Float?
   vendor            String?
   requestedBy       String?
+  requestedByUserId String?
   status            String?   // Pending, Approved, Ordered, Received
   priority          String?
   justification     String?
@@ -273,6 +280,7 @@ model ProcurementRequest {
   updatedAt         DateTime  @updatedAt
 
   // Relations
+  requestedByUser   User?     @relation("ProcurementRequests", fields: [requestedByUserId], references: [id], onDelete: SetNull)
   assets            Asset[]
 }
 
@@ -310,6 +318,19 @@ model Audit {
 
   asset             Asset                   @relation(fields: [assetId], references: [id])
   auditor           User?                   @relation("UserAudits", fields: [auditedBy], references: [id])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String    // PROCUREMENT_REQUEST, MAINTENANCE, etc.
+  isRead    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User      @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Disposal {

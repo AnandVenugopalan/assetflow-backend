@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateProcurementDto } from './dto/create-procurement.dto';
 import { UpdateProcurementDto } from './dto/update-procurement.dto';
 
 @Injectable()
 export class ProcurementService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async findAll() {
     return this.prisma.procurementRequest.findMany({
@@ -19,13 +23,28 @@ export class ProcurementService {
     });
   }
 
-  async create(createProcurementDto: CreateProcurementDto) {
-    return this.prisma.procurementRequest.create({
+  async create(createProcurementDto: CreateProcurementDto, userId: string) {
+    const procurementRequest = await this.prisma.procurementRequest.create({
       data: {
         ...createProcurementDto,
         status: 'Pending',
+        requestedByUserId: userId,
       },
     });
+
+    // Send notification to all managers
+    try {
+      await this.notificationsService.sendNotificationToRole('MANAGER', {
+        title: 'New Procurement Request',
+        message: `Admin ${createProcurementDto.requestedBy} has submitted a procurement request for ${createProcurementDto.quantity} ${createProcurementDto.itemName}.`,
+        type: 'PROCUREMENT_REQUEST',
+      });
+    } catch (error) {
+      console.error('Failed to send notification:', error);
+      // Don't throw, as the procurement request was created successfully
+    }
+
+    return procurementRequest;
   }
 
   async update(id: string, updateProcurementDto: UpdateProcurementDto) {
@@ -40,6 +59,29 @@ export class ProcurementService {
       where: { id },
       data: updateProcurementDto,
     });
+
+    // Send notification to the user who created the request when status changes to APPROVED or REJECTED
+    const statusChanged = currentProcurement.status !== updateProcurementDto.status;
+    if (statusChanged && updatedProcurement.requestedByUserId) {
+      try {
+        if (updateProcurementDto.status === 'APPROVED') {
+          await this.notificationsService.sendNotificationToUser(updatedProcurement.requestedByUserId, {
+            title: 'Procurement Request Approved',
+            message: `Your procurement request for ${updatedProcurement.quantity} ${updatedProcurement.itemName} has been approved by the Manager.`,
+            type: 'PROCUREMENT_APPROVED',
+          });
+        } else if (updateProcurementDto.status === 'REJECTED') {
+          await this.notificationsService.sendNotificationToUser(updatedProcurement.requestedByUserId, {
+            title: 'Procurement Request Rejected',
+            message: `Your procurement request for ${updatedProcurement.quantity} ${updatedProcurement.itemName} has been rejected by the Manager.`,
+            type: 'PROCUREMENT_REJECTED',
+          });
+        }
+      } catch (error) {
+        console.error('Failed to send status change notification:', error);
+        // Don't throw, as the update was successful
+      }
+    }
 
     // Auto-create assets if status changed to APPROVED
     if (updateProcurementDto.status === 'APPROVED' && currentProcurement.status !== 'APPROVED') {
@@ -129,6 +171,20 @@ export class ProcurementService {
       },
     });
 
+    // Send notification to the user who created the request
+    if (updatedProcurement.requestedByUserId) {
+      try {
+        await this.notificationsService.sendNotificationToUser(updatedProcurement.requestedByUserId, {
+          title: 'Procurement Request Approved',
+          message: `Your procurement request for ${updatedProcurement.quantity} ${updatedProcurement.itemName} has been approved by the Manager.`,
+          type: 'PROCUREMENT_APPROVED',
+        });
+      } catch (error) {
+        console.error('Failed to send approval notification:', error);
+        // Don't throw, as the approval was successful
+      }
+    }
+
     // Auto-create assets
     const quantity = procurement.quantity || 1;
     const assets: any[] = [];
@@ -173,7 +229,7 @@ export class ProcurementService {
       throw new Error('Procurement request is not in pending status');
     }
 
-    return this.prisma.procurementRequest.update({
+    const updatedProcurement = await this.prisma.procurementRequest.update({
       where: { id },
       data: {
         status: 'Rejected',
@@ -182,5 +238,21 @@ export class ProcurementService {
         rejectionReason: reason,
       },
     });
+
+    // Send notification to the user who created the request
+    if (updatedProcurement.requestedByUserId) {
+      try {
+        await this.notificationsService.sendNotificationToUser(updatedProcurement.requestedByUserId, {
+          title: 'Procurement Request Rejected',
+          message: `Your procurement request for ${updatedProcurement.quantity} ${updatedProcurement.itemName} has been rejected by the Manager.`,
+          type: 'PROCUREMENT_REJECTED',
+        });
+      } catch (error) {
+        console.error('Failed to send rejection notification:', error);
+        // Don't throw, as the rejection was successful
+      }
+    }
+
+    return updatedProcurement;
   }
 }
