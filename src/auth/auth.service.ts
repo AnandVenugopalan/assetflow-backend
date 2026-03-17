@@ -53,6 +53,16 @@ export class AuthService {
 			accessToken,
 		};
 	}
+
+	async logout(userId: string) {
+		// In JWT-based auth, logout is stateless
+		// The token is invalidated on the frontend by removing it from storage
+		// Optionally, you could log the logout action or invalidate refresh tokens
+		return {
+			success: true,
+			message: 'Logged out successfully. Please remove the token from your client.',
+		};
+	}
 }
 
 
