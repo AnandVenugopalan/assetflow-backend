@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import * as QRCode from 'qrcode';
+import PDFDocument from 'pdfkit';
+import { Readable } from 'stream';
 
 @Injectable()
 export class AssetsService {
@@ -189,6 +191,231 @@ export class AssetsService {
 	private async ensureExists(id: string) {
 		const exists = await this.prisma.asset.findUnique({ where: { id }, select: { id: true } });
 		if (!exists) throw new NotFoundException('Asset not found');
+	}
+
+	/**
+	 * Get the next sequence number and increment the counter
+	 * Ensures no duplicate numbers are generated
+	 */
+	private async getNextSequenceNumbers(quantity: number): Promise<number[]> {
+		// Get or create the sequence tracker
+		let sequence = await this.prisma.qRCodeSequence.findFirst();
+
+		if (!sequence) {
+			sequence = await this.prisma.qRCodeSequence.create({
+				data: { currentNumber: 100000 },
+			});
+		}
+
+		// Generate array of sequential numbers
+		const numbers: number[] = [];
+		for (let i = 0; i < quantity; i++) {
+			numbers.push(sequence.currentNumber + i);
+		}
+
+		// Update the sequence counter for next batch
+		await this.prisma.qRCodeSequence.update({
+			where: { id: sequence.id },
+			data: { currentNumber: sequence.currentNumber + quantity },
+		});
+
+		return numbers;
+	}
+
+	/**
+	 * Format number to 6-digit string with leading zeros (e.g., 000100)
+	 */
+	private formatQRNumber(num: number): string {
+		return num.toString().padStart(6, '0');
+	}
+
+	/**
+	 * Generate QR code image as buffer
+	 */
+	private async generateQRCodeImage(qrNumber: string): Promise<Buffer> {
+		return QRCode.toBuffer(qrNumber, {
+			errorCorrectionLevel: 'H',
+			type: 'png',
+			width: 200,
+			margin: 2,
+		});
+	}
+
+	/**
+	 * Generate batch of QR codes and return as PDF buffer
+	 * Format: 3 columns per page, 55mm × 65mm per code
+	 */
+	async generateQRCodeBatch(quantity: number, userId?: string): Promise<{ buffer: Buffer; batchData: any }> {
+		if (quantity < 1 || quantity > 100) {
+			throw new BadRequestException('Quantity must be between 1 and 100');
+		}
+
+		// Get next sequence numbers
+		const sequenceNumbers = await this.getNextSequenceNumbers(quantity);
+
+		// Create batch record
+		const batch = await this.prisma.qRCodeBatch.create({
+			data: {
+				startNumber: sequenceNumbers[0],
+				endNumber: sequenceNumbers[sequenceNumbers.length - 1],
+				quantity,
+				generatedBy: userId,
+			},
+		});
+
+		// Generate QR codes and create PDF
+		const pdfBuffer = await this.createQRCodePDF(sequenceNumbers);
+
+		// Update batch with PDF URL (you could store it in S3 or file system)
+		// For now, we'll just track that it was generated
+		await this.prisma.qRCodeBatch.update({
+			where: { id: batch.id },
+			data: { pdfUrl: `qr-batch-${batch.id}.pdf` },
+		});
+
+		return {
+			buffer: pdfBuffer,
+			batchData: {
+				id: batch.id,
+				batchNumber: batch.batchNumber,
+				startNumber: this.formatQRNumber(batch.startNumber),
+				endNumber: this.formatQRNumber(batch.endNumber),
+				quantity: batch.quantity,
+				createdAt: batch.createdAt,
+			},
+		};
+	}
+
+	/**
+	 * Create PDF with QR codes
+	 * Grid layout: 3 columns per page
+	 * Size: 55mm × 65mm per code with borders
+	 */
+	private async createQRCodePDF(sequenceNumbers: number[]): Promise<Buffer> {
+		return new Promise(async (resolve, reject) => {
+			try {
+				const doc = new PDFDocument({
+					size: 'A4',
+					margin: 10,
+				});
+
+				const chunks: Buffer[] = [];
+
+				doc.on('data', (chunk: Buffer) => {
+					chunks.push(chunk);
+				});
+
+				doc.on('end', () => {
+					resolve(Buffer.concat(chunks));
+				});
+
+				doc.on('error', reject);
+
+				// PDF dimensions in points (1mm = 2.834645669 points)
+				const mmToPt = 2.834645669;
+				const labelWidth = 55 * mmToPt; // ~155 points
+				const labelHeight = 65 * mmToPt; // ~179 points
+				const pageWidth = doc.page.width;
+				const pageHeight = doc.page.height;
+
+				// Layout: 3 columns, calculate positions
+				const margin = 10;
+				const availableWidth = pageWidth - margin * 2;
+				const colWidth = availableWidth / 3;
+				const xPositions = [
+					margin + (colWidth - labelWidth) / 2,
+					margin + colWidth + (colWidth - labelWidth) / 2,
+					margin + colWidth * 2 + (colWidth - labelWidth) / 2,
+				];
+
+				let yPosition = margin + 10;
+				let colIndex = 0;
+
+				for (let i = 0; i < sequenceNumbers.length; i++) {
+					// Check if we need a new page
+					if (yPosition + labelHeight > pageHeight - margin) {
+						doc.addPage();
+						yPosition = margin + 10;
+						colIndex = 0;
+					}
+
+					const qrNumber = this.formatQRNumber(sequenceNumbers[i]);
+					const xPosition = xPositions[colIndex];
+
+					// Draw border around label
+					doc.rect(xPosition, yPosition, labelWidth, labelHeight).stroke();
+
+					try {
+						// Generate QR code image
+						const qrImage = await this.generateQRCodeImage(qrNumber);
+
+						// Draw QR code (centered in label, with space for number)
+						const qrSize = 100;
+						const qrX = xPosition + (labelWidth - qrSize) / 2;
+						const qrY = yPosition + 10;
+
+						doc.image(qrImage, qrX, qrY, { width: qrSize, height: qrSize });
+
+						// Draw QR number below the code
+						const numberY = qrY + qrSize + 5;
+						doc.fontSize(10).text(qrNumber, xPosition, numberY, {
+							width: labelWidth,
+							align: 'center',
+						});
+					} catch (err) {
+						console.error(`Error generating QR code for ${qrNumber}:`, err);
+					}
+
+					// Move to next column or next row
+					colIndex++;
+					if (colIndex === 3 || i === sequenceNumbers.length - 1) {
+						yPosition += labelHeight + 10;
+						colIndex = 0;
+					}
+				}
+
+				doc.end();
+			} catch (err) {
+				reject(err);
+			}
+		});
+	}
+
+	/**
+	 * Get all QR code batches
+	 */
+	async getQRCodeBatches() {
+		return this.prisma.qRCodeBatch.findMany({
+			orderBy: { createdAt: 'desc' },
+			select: {
+				id: true,
+				batchNumber: true,
+				startNumber: true,
+				endNumber: true,
+				quantity: true,
+				createdAt: true,
+				isActive: true,
+			},
+		});
+	}
+
+	/**
+	 * Get batch details by ID
+	 */
+	async getQRCodeBatchDetails(batchId: string) {
+		const batch = await this.prisma.qRCodeBatch.findUnique({
+			where: { id: batchId },
+		});
+
+		if (!batch) {
+			throw new NotFoundException('QR Code batch not found');
+		}
+
+		return {
+			...batch,
+			startNumber: this.formatQRNumber(batch.startNumber),
+			endNumber: this.formatQRNumber(batch.endNumber),
+		};
 	}
 }
 

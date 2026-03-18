@@ -347,3 +347,21 @@ model Disposal {
   salvageValue   Float?
   createdAt     DateTime @default(now())
 }
+
+model QRCodeBatch {
+  id                String    @id @default(uuid())
+  batchNumber       Int       @unique @default(autoincrement()) // Auto-incrementing batch identifier
+  startNumber       Int       // Starting sequential number (e.g., 100)
+  endNumber         Int       // Ending sequential number (e.g., 199)
+  quantity          Int       // Number of QR codes in this batch
+  generatedBy       String?   // User ID who generated this batch
+  pdfUrl            String?   // URL to download the generated PDF
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+}
+
+model QRCodeSequence {
+  id                String    @id @default(uuid())
+  currentNumber     Int       @default(100000) // Start from 100000 to maintain 6-digit format (000100)
+  updatedAt         DateTime  @updatedAt
+}
