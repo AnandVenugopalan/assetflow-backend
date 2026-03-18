@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors, SetMetadata } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors, SetMetadata, Res } from '@nestjs/common';
 import { AssetsService } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
@@ -10,6 +10,8 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { Request } from 'express';
+import type { Response } from 'express';
+import { GenerateQRCodeDto } from './dto/generate-qr.dto';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
@@ -99,6 +101,50 @@ export class AssetsController {
 	@Roles('ADMIN', 'MANAGER')
 	deleteDocument(@Param('id') id: string, @Param('docId') docId: string) {
 		return this.assetsService.deleteDocument(id, docId);
+	}
+
+	/**
+	 * Generate QR codes in batch and download as PDF
+	 * Sequential numbers prevent duplicates (e.g., 000100, 000101, etc.)
+	 * PDF contains 3 columns per page with 55mm × 65mm labels
+	 */
+	@Post('qr-codes/generate')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
+	@Roles('ADMIN', 'MANAGER')
+	async generateQRCodes(
+		@Body() dto: GenerateQRCodeDto,
+		@CurrentUser() user: { userId: string; email: string; role: string },
+		@Res() res: Response,
+	) {
+		const { buffer, batchData } = await this.assetsService.generateQRCodeBatch(dto.quantity, user.userId);
+
+		// Set response headers for PDF download
+		res.setHeader('Content-Type', 'application/pdf');
+		res.setHeader('Content-Disposition', `attachment; filename="qr-codes-batch-${batchData.batchNumber}.pdf"`);
+		res.setHeader('Content-Length', buffer.length);
+
+		// Send the PDF buffer
+		res.send(buffer);
+	}
+
+	/**
+	 * Get all QR code batches history
+	 */
+	@Get('qr-codes/batches')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
+	@Roles('ADMIN', 'MANAGER')
+	getQRCodeBatches() {
+		return this.assetsService.getQRCodeBatches();
+	}
+
+	/**
+	 * Get specific QR code batch details
+	 */
+	@Get('qr-codes/batches/:batchId')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
+	@Roles('ADMIN', 'MANAGER')
+	getQRCodeBatchDetails(@Param('batchId') batchId: string) {
+		return this.assetsService.getQRCodeBatchDetails(batchId);
 	}
 }
 
