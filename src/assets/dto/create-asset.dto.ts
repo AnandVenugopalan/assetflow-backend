@@ -46,6 +46,10 @@ export class CreateAssetDto {
 	@IsOptional()
 	@IsString()
 	description?: string;
+
+	@IsOptional()
+	@IsString()
+	qrCode?: string; // QR code number (e.g., "100009" or "000100")
 }
 
 
