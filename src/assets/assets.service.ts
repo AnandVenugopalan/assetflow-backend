@@ -11,7 +11,20 @@ export class AssetsService {
 	constructor(private readonly prisma: PrismaService) {}
 
 	async create(dto: CreateAssetDto) {
-		// First create the asset to get its ID
+		// If QR code provided, check if asset already exists with that qrCode
+		if (dto.qrCode) {
+			const existingAsset = await this.prisma.asset.findFirst({
+				where: { qrCode: dto.qrCode },
+			});
+
+			if (existingAsset) {
+				throw new BadRequestException(
+					`Asset already exists with QR code "${dto.qrCode}". Please use a different QR code or update the existing asset.`
+				);
+			}
+		}
+
+		// Create the asset
 		const asset = await this.prisma.asset.create({
 			data: {
 				...dto,
@@ -20,33 +33,16 @@ export class AssetsService {
 			},
 		});
 
-		// Generate QR code containing the asset ID
-		// The QR code will store the asset ID which can be used to fetch details
-		const qrCodeData = JSON.stringify({
-			assetId: asset.id,
-			name: asset.name,
-			category: asset.category,
-		});
-
-		// Generate QR code as base64 data URL
-		const qrCodeImage = await QRCode.toDataURL(qrCodeData, {
-			errorCorrectionLevel: 'H',
-			type: 'image/png',
-			width: 300,
-			margin: 1,
-		});
-
-		// Update asset with QR code
-		return this.prisma.asset.update({
-			where: { id: asset.id },
-			data: { qrCode: qrCodeImage },
-		});
+		return asset;
 	}
 
-	// Public method for QR code scanning - returns basic asset info
-	async findByQR(id: string) {
-		const asset = await this.prisma.asset.findUnique({
-			where: { id },
+	/**
+	 * Find asset by QR code number (e.g., "100009" or "000100")
+	 * Public endpoint - used when scanning QR codes
+	 */
+	async findByQR(qrCode: string) {
+		const asset = await this.prisma.asset.findFirst({
+			where: { qrCode: qrCode },
 			include: {
 				owner: { select: { id: true, name: true, email: true } },
 				assignedTo: { select: { id: true, name: true, email: true } },
@@ -54,7 +50,7 @@ export class AssetsService {
 		});
 
 		if (!asset) {
-			throw new NotFoundException('Asset not found');
+			throw new NotFoundException(`Asset with QR code "${qrCode}" not found. Please create a new asset or check the QR code.`);
 		}
 
 		// Return all asset details (you can customize what to show)
@@ -75,6 +71,39 @@ export class AssetsService {
 			qrCode: asset.qrCode,
 			createdAt: asset.createdAt,
 			updatedAt: asset.updatedAt,
+		};
+	}
+
+	/**
+	 * Link a QR code to an existing asset
+	 * Used when asset is created first, then QR code is linked later
+	 */
+	async linkQRCodeToAsset(assetId: string, qrCode: string): Promise<any> {
+		// Check if asset exists
+		await this.ensureExists(assetId);
+
+		// Check if QR code is already used by another asset
+		const existingAsset = await this.prisma.asset.findFirst({
+			where: { qrCode: qrCode },
+		});
+
+		if (existingAsset && existingAsset.id !== assetId) {
+			throw new BadRequestException(
+				`QR code "${qrCode}" is already linked to another asset. Please use a different QR code.`
+			);
+		}
+
+		// Link QR code to asset
+		const updatedAsset = await this.prisma.asset.update({
+			where: { id: assetId },
+			data: { qrCode: qrCode },
+		});
+
+		return {
+			id: updatedAsset.id,
+			name: updatedAsset.name,
+			qrCode: updatedAsset.qrCode,
+			message: `QR code "${qrCode}" successfully linked to asset "${updatedAsset.name}"`,
 		};
 	}
 

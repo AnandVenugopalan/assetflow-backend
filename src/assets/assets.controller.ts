@@ -12,7 +12,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { Request } from 'express';
 import type { Response } from 'express';
 import { GenerateQRCodeDto } from './dto/generate-qr.dto';
-
+import { LinkQRCodeDto } from './dto/link-qr-code.dto';
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
@@ -32,10 +32,14 @@ export class AssetsController {
 		return this.assetsService.create(dto);
 	}
 
-	// Public endpoint for QR code scanning - no authentication required
-	@Get('qr/:id')
-	findByQR(@Param('id') id: string) {
-		return this.assetsService.findByQR(id);
+	/**
+	 * Public endpoint for QR code scanning - no authentication required
+	 * Used when scanning QR codes to find and load asset details
+	 * QR code format: 6-digit number (e.g., "100009" or "000100")
+	 */
+	@Get('qr/:qrCode')
+	findByQR(@Param('qrCode') qrCode: string) {
+		return this.assetsService.findByQR(qrCode);
 	}
 
 	@Get()
@@ -101,6 +105,17 @@ export class AssetsController {
 	@Roles('ADMIN', 'MANAGER')
 	deleteDocument(@Param('id') id: string, @Param('docId') docId: string) {
 		return this.assetsService.deleteDocument(id, docId);
+	}
+
+	/**
+	 * Link a QR code to an existing asset
+	 * Used to assign a QR code number from the generated batch to an asset
+	 */
+	@Patch(':id/link-qr')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
+	@Roles('ADMIN', 'MANAGER')
+	linkQRCode(@Param('id') assetId: string, @Body() dto: LinkQRCodeDto) {
+		return this.assetsService.linkQRCodeToAsset(assetId, dto.qrCode);
 	}
 
 	/**
