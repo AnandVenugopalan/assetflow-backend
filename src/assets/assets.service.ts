@@ -107,6 +107,46 @@ export class AssetsService {
 		};
 	}
 
+	/**
+	 * Mark an asset as verified
+	 * Creates an audit record with VERIFIED status
+	 */
+	async markAsVerified(assetId: string, auditedBy: string, remarks?: string, condition: string = 'GOOD') {
+		// Check if asset exists
+		const asset = await this.ensureExists(assetId);
+
+		// Create audit record with VERIFIED status
+		const auditRecord = await this.prisma.audit.create({
+			data: {
+				assetId,
+				condition: condition as any,
+				verificationStatus: 'VERIFIED',
+				remarks,
+				auditedBy,
+				auditedAt: new Date(),
+			},
+			include: {
+				asset: { select: { id: true, name: true, serialNumber: true } },
+				auditor: { select: { id: true, name: true, email: true } },
+			},
+		});
+
+		return {
+			success: true,
+			message: `Asset "${auditRecord.asset.name}" marked as verified`,
+			auditRecord: {
+				id: auditRecord.id,
+				assetId: auditRecord.assetId,
+				assetName: auditRecord.asset.name,
+				verificationStatus: auditRecord.verificationStatus,
+				condition: auditRecord.condition,
+				remarks: auditRecord.remarks,
+				auditedBy: auditRecord.auditor?.name,
+				auditedAt: auditRecord.auditedAt,
+			},
+		};
+	}
+
 	findAll(params?: { status?: string; type?: string; q?: string; assignedTo?: string }, user?: { userId: string; role: string }) {
 		const where: any = {};
 		
