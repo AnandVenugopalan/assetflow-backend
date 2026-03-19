@@ -13,6 +13,7 @@ import { Request } from 'express';
 import type { Response } from 'express';
 import { GenerateQRCodeDto } from './dto/generate-qr.dto';
 import { LinkQRCodeDto } from './dto/link-qr-code.dto';
+import { MarkAsVerifiedDto } from './dto/mark-verified.dto';
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
@@ -160,6 +161,27 @@ export class AssetsController {
 	@Roles('ADMIN', 'MANAGER')
 	getQRCodeBatchDetails(@Param('batchId') batchId: string) {
 		return this.assetsService.getQRCodeBatchDetails(batchId);
+	}
+
+	/**
+	 * Mark an asset as verified
+	 * Creates an audit record with VERIFIED status
+	 * Used by the "Verify Assets" page to mark assets as verified
+	 */
+	@Patch(':id/verify')
+	@UseGuards(AuthGuard('jwt'), RolesGuard)
+	@Roles('ADMIN', 'MANAGER')
+	markAsVerified(
+		@Param('id') assetId: string,
+		@Body() dto: MarkAsVerifiedDto,
+		@CurrentUser() user: { userId: string; email: string; role: string },
+	) {
+		return this.assetsService.markAsVerified(
+			assetId,
+			user.userId,
+			dto.remarks,
+			dto.condition || 'GOOD'
+		);
 	}
 }
 
