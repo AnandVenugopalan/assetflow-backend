@@ -63,6 +63,25 @@ export class AuthService {
 			message: 'Logged out successfully. Please remove the token from your client.',
 		};
 	}
+
+	/**
+	 * Generate JWT token from user
+	 */
+	generateJwt(user: any): string {
+		return this.signToken({ sub: user.id, email: user.email, role: user.role });
+	}
+
+	/**
+	 * Get current user by ID
+	 */
+	async getCurrentUser(userId: string) {
+		const user = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { id: true, name: true, email: true, role: true, createdAt: true, updatedAt: true, googleId: true, microsoftId: true },
+		});
+		if (!user) {
+			throw new UnauthorizedException('User not found');
+		}
+		return user;
+	}
 }
-
-
