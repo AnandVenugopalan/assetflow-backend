@@ -1,6 +1,6 @@
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback } from 'passport-google-oauth20';
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -28,35 +28,38 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
 			const { id: googleId, displayName: name, emails } = profile;
 			const email = emails?.[0]?.value;
 
+			console.log('GoogleStrategy.validate() called with email:', email);
+
 			if (!email) {
-				return done(new Error('No email found from Google profile'), false);
+				const err = new UnauthorizedException('No email found from Google profile');
+				console.log('No email found, returning error');
+				return done(err, false);
 			}
 
 			let user = await this.prisma.user.findUnique({
 				where: { email },
 			});
 
-			if (user) {
-				if (!user.googleId) {
-					user = await this.prisma.user.update({
-						where: { id: user.id },
-						data: { googleId },
-					});
-				}
-				return done(null, user);
+			console.log('User lookup result for', email, ':', user ? 'Found' : 'Not found');
+
+			if (!user) {
+				// User not registered - return error
+				const err = new Error(`Email ${email} is not registered. Please sign up first.`);
+				console.log('User not registered, returning error:', err.message);
+				return done(err, false);
 			}
 
-			user = await this.prisma.user.create({
-				data: {
-					name: name || email.split('@')[0],
-					email,
-					googleId,
-					role: 'USER',
-				},
-			});
+			console.log('User authenticated:', user.email);
 
+			if (!user.googleId) {
+				user = await this.prisma.user.update({
+					where: { id: user.id },
+					data: { googleId },
+				});
+			}
 			return done(null, user);
 		} catch (error) {
+			console.log('GoogleStrategy catch error:', (error as any).message);
 			return done(error, false);
 		}
 	}

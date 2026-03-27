@@ -1,6 +1,6 @@
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback } from 'passport-microsoft';
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -28,35 +28,38 @@ export class MicrosoftStrategy extends PassportStrategy(Strategy, 'microsoft') {
 			const { id: microsoftId, displayName: name, emails } = profile;
 			const email = emails?.[0]?.value;
 
+			console.log('MicrosoftStrategy.validate() called with email:', email);
+
 			if (!email) {
-				return done(new Error('No email found from Microsoft profile'), false);
+				const err = new Error('No email found from Microsoft profile');
+				console.log('No email found, returning error');
+				return done(err, false);
 			}
 
 			let user = await this.prisma.user.findUnique({
 				where: { email },
 			});
 
-			if (user) {
-				if (!user.microsoftId) {
-					user = await this.prisma.user.update({
-						where: { id: user.id },
-						data: { microsoftId },
-					});
-				}
-				return done(null, user);
+			console.log('User lookup result for', email, ':', user ? 'Found' : 'Not found');
+
+			if (!user) {
+				// User not registered - return error
+				const err = new Error(`Email ${email} is not registered. Please sign up first.`);
+				console.log('User not registered, returning error:', err.message);
+				return done(err, false);
 			}
 
-			user = await this.prisma.user.create({
-				data: {
-					name: name || email.split('@')[0],
-					email,
-					microsoftId,
-					role: 'USER',
-				},
-			});
+			console.log('User authenticated:', user.email);
 
+			if (!user.microsoftId) {
+				user = await this.prisma.user.update({
+					where: { id: user.id },
+					data: { microsoftId },
+				});
+			}
 			return done(null, user);
 		} catch (error) {
+			console.log('MicrosoftStrategy catch error:', (error as any).message);
 			return done(error, false);
 		}
 	}
