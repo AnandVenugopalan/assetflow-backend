@@ -11,8 +11,11 @@ export class AssetsService {
 	constructor(private readonly prisma: PrismaService) {}
 
 	async create(dto: CreateAssetDto) {
-		// If QR code provided, check if asset already exists with that qrCode
-		if (dto.qrCode) {
+		// Auto-generate QR code if not provided
+		if (!dto.qrCode) {
+			dto.qrCode = await this.generateAutoQRCode();
+		} else {
+			// If QR code provided, check if asset already exists with that qrCode
 			const existingAsset = await this.prisma.asset.findFirst({
 				where: { qrCode: dto.qrCode },
 			});
@@ -39,15 +42,35 @@ export class AssetsService {
 	/**
 	 * Find asset by QR code number (e.g., "100009" or "000100")
 	 * Public endpoint - used when scanning QR codes
+	 * 
+	 * The qrCode parameter can be:
+	 * 1. A 6-digit code (e.g., "000100") - the standard format
+	 * 2. An asset ID - as a fallback for debugging
 	 */
 	async findByQR(qrCode: string) {
-		const asset = await this.prisma.asset.findFirst({
+		// First, try to find by qrCode field (standard method)
+		let asset = await this.prisma.asset.findFirst({
 			where: { qrCode: qrCode },
 			include: {
 				owner: { select: { id: true, name: true, email: true } },
 				assignedTo: { select: { id: true, name: true, email: true } },
 			},
 		});
+
+		// If not found and qrCode looks like a UUID, try finding by asset ID (fallback for debugging)
+		if (!asset && this.isValidUUID(qrCode)) {
+			asset = await this.prisma.asset.findUnique({
+				where: { id: qrCode },
+				include: {
+					owner: { select: { id: true, name: true, email: true } },
+					assignedTo: { select: { id: true, name: true, email: true } },
+				},
+			});
+
+			if (asset) {
+				console.warn(`Asset found by ID instead of QR code. Asset ID: ${qrCode}. The asset may not have a QR code linked.`);
+			}
+		}
 
 		if (!asset) {
 			throw new NotFoundException(`Asset with QR code "${qrCode}" not found. Please create a new asset or check the QR code.`);
@@ -263,6 +286,14 @@ export class AssetsService {
 	}
 
 	/**
+	 * Check if a string is a valid UUID v4
+	 */
+	private isValidUUID(uuid: string): boolean {
+		const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+		return uuidRegex.test(uuid);
+	}
+
+	/**
 	 * Get the next sequence number and increment the counter
 	 * Ensures no duplicate numbers are generated
 	 */
@@ -296,6 +327,31 @@ export class AssetsService {
 	 */
 	private formatQRNumber(num: number): string {
 		return num.toString().padStart(6, '0');
+	}
+
+	/**
+	 * Auto-generate a unique QR code for an asset
+	 * Increments the sequence counter to ensure no duplicates
+	 */
+	private async generateAutoQRCode(): Promise<string> {
+		// Get or create the sequence tracker
+		let sequence = await this.prisma.qRCodeSequence.findFirst();
+
+		if (!sequence) {
+			sequence = await this.prisma.qRCodeSequence.create({
+				data: { currentNumber: 100000 },
+			});
+		}
+
+		const qrNumber = sequence.currentNumber;
+
+		// Update the sequence counter for next auto-generated code
+		await this.prisma.qRCodeSequence.update({
+			where: { id: sequence.id },
+			data: { currentNumber: sequence.currentNumber + 1 },
+		});
+
+		return this.formatQRNumber(qrNumber);
 	}
 
 	/**
