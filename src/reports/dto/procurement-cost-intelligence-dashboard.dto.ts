@@ -18,6 +18,10 @@ export class ProcurementMetricsDto {
   pendingRequests: number;
   pendingRequestsChange: number;
   pendingRequestsChangePercent: string;
+
+  closureRate: number;
+  closureRateChange: number;
+  closureRateChangePercent: string;
 }
 
 export class ProcurementStatusDto {
@@ -57,6 +61,20 @@ export class VendorSummaryDto {
   ratingDisplay: string; // e.g., "★★★★☆"
 }
 
+export class DepartmentSpendDto {
+  department: string;
+  spend: number;
+}
+
+export class PendingPipelineStageDto {
+  stage: string; // Pending, Pending Approval, Ordered, Received
+  value: number;
+}
+
+export class GapCoverageNoteDto {
+  note: string;
+}
+
 export class ProcurementAndCostIntelligenceDashboardDto {
   metrics: ProcurementMetricsDto;
   requestStatusDistribution: ProcurementStatusDto[];
@@ -65,5 +83,8 @@ export class ProcurementAndCostIntelligenceDashboardDto {
   vendorPerformance: VendorPerformanceDto[];
   topPurchasedCategories: TopPurchasedCategoryDto[];
   vendorSummary: VendorSummaryDto[];
+  departmentWiseSpend: DepartmentSpendDto[];
+  pendingPipelineValueByStage: PendingPipelineStageDto[];
+  gapCoverageNotes: GapCoverageNoteDto[];
   lastUpdated: Date;
 }

@@ -33,9 +33,28 @@ export class CategoryInventoryDto {
   available: number;
 }
 
+export class DepartmentAssetUsageDto {
+  department: string;
+  assetCount: number;
+  utilizationRate: number;
+}
+
+export class AssetAgingDto {
+  ageGroup: string; // 0-1 year, 1-3 years, 3-5 years, 5+ years
+  count: number;
+}
+
+export class TopIdleAssetCategoryDto {
+  category: string;
+  idleCount: number;
+}
+
 export class AssetUtilizationDashboardDto {
   metrics: AssetMetricsDto;
   statusDistribution: AssetStatusCountDto[];
   inventoryByCategory: CategoryInventoryDto[];
+  departmentWiseAssetUsage: DepartmentAssetUsageDto[];
+  assetAgingAnalysis: AssetAgingDto[];
+  topIdleAssetCategories: TopIdleAssetCategoryDto[];
   lastUpdated: Date;
 }

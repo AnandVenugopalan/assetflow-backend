@@ -27,6 +27,15 @@ export class AssetHealthScoreDto {
   percentage: number;
 }
 
+export class MaintenanceCostPerAssetDto {
+  assetName: string;
+  cost: number;
+}
+
+export class GapCoverageNoteDto {
+  note: string;
+}
+
 export class MaintenanceMetricsDto {
   totalRequests: number;
   totalRequestsChange: number;
@@ -43,6 +52,14 @@ export class MaintenanceMetricsDto {
   totalAssets: number;
   totalAssetsChange: number;
   totalAssetsChangePercent: string;
+
+  closureRate: number;
+  closureRateChange: number;
+  closureRateChangePercent: string;
+
+  avgResolutionTime: number; // days
+  avgResolutionTimeChange: number;
+  avgResolutionTimeChangePercent: string;
 }
 
 export class MaintenanceAndAssetHealthDashboardDto {
@@ -51,7 +68,10 @@ export class MaintenanceAndAssetHealthDashboardDto {
   priorityDistribution: PriorityDistributionDto[];
   monthlyMaintenanceTrend: MonthlyTrendDataDto[];
   maintenanceCostTrend: MonthlyTrendDataDto[];
+  avgResolutionTimeTrend: MonthlyTrendDataDto[];
   repairFailures: RepairFailureDto[];
   assetHealthScore: AssetHealthScoreDto[];
+  maintenanceCostPerAsset: MaintenanceCostPerAssetDto[];
+  gapCoverageNotes: GapCoverageNoteDto[];
   lastUpdated: Date;
 }
