@@ -36,9 +36,17 @@ export class MonthlySpendDataDto {
   requests: number;
 }
 
+export class AssetTypeDto {
+  assetType: string;
+  spend: number;
+  count: number;
+}
+
 export class CategorySpendDto {
   category: string;
+  categoryLabel: string;
   spend: number;
+  assetTypes: AssetTypeDto[];
 }
 
 export class VendorPerformanceDto {

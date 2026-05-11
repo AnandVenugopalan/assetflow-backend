@@ -26,6 +26,7 @@ import {
   ProcurementStatusDto,
   MonthlySpendDataDto,
   CategorySpendDto,
+  AssetTypeDto,
   VendorPerformanceDto,
   TopPurchasedCategoryDto,
   VendorSummaryDto,
@@ -816,22 +817,81 @@ export class ReportsService {
       }))
       .filter((m) => m.spend > 0 || m.requests > 0); // Only show months with data
 
-    // Get spend by category
-    const requestsByCategory = await this.prisma.procurementRequest.groupBy({
+    // Get spend by category with asset type drill-down
+    // Group by category first to get all categories
+    const allCategories = await this.prisma.procurementRequest.groupBy({
       by: ['category'],
       _sum: { estimatedCost: true },
       _count: true,
     });
 
-    const categoryWiseSpend: CategorySpendDto[] = requestsByCategory
-      .map((item) => ({
-        category: item.category || 'Uncategorized',
-        spend: item._sum.estimatedCost || 0,
-      }))
-      .sort((a, b) => b.spend - a.spend);
+    // Helper function to map category ID to label
+    const getCategoryLabel = (category: string | null): string => {
+      const categoryMap: { [key: string]: string } = {
+        'it-assets': 'IT Assets',
+        'movable-assets': 'Movable Assets',
+        'immovable-assets': 'Immovable Assets',
+      };
+      return categoryMap[category || ''] || category || 'Uncategorized';
+    };
+
+    // Define all possible categories that should always appear
+    const definedCategories = ['it-assets', 'movable-assets', 'immovable-assets'];
+
+    // Create a map with all categories initialized to empty
+    const categoryDataMap: { [key: string]: { spend: number; itemNames: string[] } } = {};
+    definedCategories.forEach((cat) => {
+      categoryDataMap[cat] = { spend: 0, itemNames: [] };
+    });
+
+    // Update the map with actual data from database
+    allCategories.forEach((categoryGroup) => {
+      const category = categoryGroup.category || 'Uncategorized';
+      const categorySpend = Math.round(categoryGroup._sum.estimatedCost || 0);
+      if (category in categoryDataMap) {
+        categoryDataMap[category].spend = categorySpend;
+      } else if (category) {
+        categoryDataMap[category] = { spend: categorySpend, itemNames: [] };
+      }
+    });
+
+    // Build category-wise spend with asset type (itemName) drill-down
+    const categoryWiseSpend: CategorySpendDto[] = [];
+    
+    for (const category of definedCategories) {
+      const categoryLabel = getCategoryLabel(category);
+      const categorySpend = categoryDataMap[category]?.spend || 0;
+
+      // Get all procurement requests in this category grouped by itemName (asset type)
+      const requestsByItemName = await this.prisma.procurementRequest.groupBy({
+        by: ['itemName'],
+        where: { category },
+        _sum: { estimatedCost: true, quantity: true },
+        _count: true,
+      });
+
+      // Convert to array and sort by spend
+      const assetTypes = requestsByItemName
+        .map((item) => ({
+          assetType: item.itemName || 'Uncategorized',
+          spend: Math.round(item._sum.estimatedCost || 0),
+          count: item._sum.quantity || item._count || 0,
+        }))
+        .sort((a, b) => b.spend - a.spend);
+
+      categoryWiseSpend.push({
+        category,
+        categoryLabel,
+        spend: categorySpend,
+        assetTypes,
+      });
+    }
+
+    // Sort by spend (but keep defined order if equal)
+    categoryWiseSpend.sort((a, b) => b.spend - a.spend);
 
     // Get top purchased categories by request count
-    const topPurchasedCategories: TopPurchasedCategoryDto[] = requestsByCategory
+    const topPurchasedCategories: TopPurchasedCategoryDto[] = allCategories
       .map((item) => ({
         category: item.category || 'Uncategorized',
         count: item._count,
@@ -878,17 +938,41 @@ export class ReportsService {
       });
 
     // Get department-wise spend (REAL DATA from database)
-    // Note: Using category as department proxy - add department field to schema for actual departments
-    const requestsWithCategory = await this.prisma.procurementRequest.findMany({
-      select: { category: true, estimatedCost: true },
-    });
+    // Define all possible departments that should always appear
+    const definedDepartments = [
+      'Engineering',
+      'Design',
+      'Sales',
+      'Marketing',
+      'Human Resources',
+      'Finance',
+      'IT',
+      'Operations',
+    ];
 
+    // Initialize department spend map with all departments at zero
     const deptSpendMap: { [key: string]: number } = {};
-    requestsWithCategory.forEach((req) => {
-      const dept = req.category || 'Other';
-      deptSpendMap[dept] = (deptSpendMap[dept] || 0) + (req.estimatedCost || 0);
+    definedDepartments.forEach((dept) => {
+      deptSpendMap[dept] = 0;
     });
 
+    // Get actual spend data from procured assets by department
+    const assetsByDepartment = await this.prisma.asset.groupBy({
+      by: ['department'],
+      _sum: { purchaseCost: true },
+    });
+
+    // Update the map with actual data from database
+    assetsByDepartment.forEach((asset) => {
+      const dept = asset.department || 'Other';
+      if (dept in deptSpendMap) {
+        deptSpendMap[dept] = (deptSpendMap[dept] || 0) + (asset._sum.purchaseCost || 0);
+      } else if (dept) {
+        deptSpendMap[dept] = (asset._sum.purchaseCost || 0);
+      }
+    });
+
+    // Build department-wise spend array with all departments (sorted by spend)
     const departmentWiseSpend: DepartmentSpendDto[] = Object.entries(deptSpendMap)
       .map(([department, spend]) => ({
         department,
