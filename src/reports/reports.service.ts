@@ -902,12 +902,42 @@ export class ReportsService {
       _sum: { estimatedCost: true },
     });
 
-    const pendingPipelineValueByStage: PendingPipelineStageDto[] = requestsByStatus
-      .map((item) => ({
-        stage: item.status || 'Unknown',
-        value: Math.round(item._sum.estimatedCost || 0),
+    // Define all possible stages in order
+    const allStages = ['DRAFT', 'SUBMITTED', 'APPROVED', 'ORDERED'];
+    
+    // Create a map with all stages initialized to 0
+    const stageValueMap: { [key: string]: number } = {};
+    allStages.forEach((stage) => {
+      stageValueMap[stage] = 0;
+    });
+
+    // Update the map with actual values from the database
+    requestsByStatus.forEach((item) => {
+      const status = (item.status || '').toUpperCase();
+      const value = Math.round(item._sum.estimatedCost || 0);
+      if (status in stageValueMap) {
+        stageValueMap[status] = value;
+      } else if (status) {
+        // If a status not in our predefined list exists, add it
+        stageValueMap[status] = value;
+      }
+    });
+
+    // Convert map to array in the defined order
+    const pendingPipelineValueByStage: PendingPipelineStageDto[] = allStages
+      .map((stage) => ({
+        stage,
+        value: stageValueMap[stage],
       }))
-      .sort((a, b) => b.value - a.value);
+      .concat(
+        // Add any additional statuses not in the main list
+        Object.entries(stageValueMap)
+          .filter(([stage]) => !allStages.includes(stage))
+          .map(([stage, value]) => ({
+            stage,
+            value,
+          }))
+      );
 
     // Generate gap coverage notes based on REAL DATA
     const gapCoverageNotes: ProcurementGapCoverageNoteDto[] = [];
