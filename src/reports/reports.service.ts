@@ -183,18 +183,36 @@ export class ReportsService {
       _count: true,
     });
 
-    // Build inventory by category
-    const inventoryByCategory: CategoryInventoryDto[] = assetsByCategory.map(
-      (cat) => {
-        const inventory = cat._count;
-        const allocated =
-          allocatedByCategory.find((a) => a.category === cat.category)?._count ||
-          0;
+    // Define all possible categories that should always appear
+    const definedCategories = ['it-assets', 'movable-assets', 'immovable-assets'];
+
+    // Create a map with all categories initialized to 0
+    const categoryCountMap: { [key: string]: { inventory: number; allocated: number } } = {};
+    definedCategories.forEach((cat) => {
+      categoryCountMap[cat] = { inventory: 0, allocated: 0 };
+    });
+
+    // Update the map with actual data from database
+    assetsByCategory.forEach((cat) => {
+      const category = cat.category || 'Uncategorized';
+      const inventory = cat._count;
+      const allocated = allocatedByCategory.find((a) => a.category === category)?._count || 0;
+      if (category in categoryCountMap) {
+        categoryCountMap[category] = { inventory, allocated };
+      } else if (category) {
+        categoryCountMap[category] = { inventory, allocated };
+      }
+    });
+
+    // Build inventory by category with all categories
+    const inventoryByCategory: CategoryInventoryDto[] = definedCategories.map(
+      (category) => {
+        const data = categoryCountMap[category] || { inventory: 0, allocated: 0 };
         return {
-          category: cat.category,
-          inventory,
-          allocated,
-          available: inventory - allocated,
+          category,
+          inventory: data.inventory,
+          allocated: data.allocated,
+          available: data.inventory - data.allocated,
         };
       },
     );
@@ -258,21 +276,46 @@ export class ReportsService {
       _count: true,
     });
 
-    const departmentWiseAssetUsage = assetsByDepartment
-      .filter((d) => d.department !== null)
-      .map((dept) => {
-        const totalInDept = dept._count;
-        const allocatedInDept =
-          allocatedByDepartment.find((a) => a.department === dept.department)?._count || 0;
-        const utilRate =
-          totalInDept > 0 ? (allocatedInDept / totalInDept) * 100 : 0;
-        return {
-          department: dept.department as string,
-          assetCount: totalInDept,
-          utilizationRate: Math.round(utilRate * 10) / 10,
-        };
-      })
-      .sort((a, b) => b.assetCount - a.assetCount);
+    // Define all possible departments that should always appear
+    const definedDepartments = [
+      'Engineering',
+      'Design',
+      'Sales',
+      'Marketing',
+      'Human Resources',
+      'Finance',
+      'IT',
+      'Operations',
+    ];
+
+    // Create a map with all departments initialized to 0
+    const departmentCountMap: { [key: string]: { total: number; allocated: number } } = {};
+    definedDepartments.forEach((dept) => {
+      departmentCountMap[dept] = { total: 0, allocated: 0 };
+    });
+
+    // Update the map with actual data from database
+    assetsByDepartment.forEach((dept) => {
+      const department = dept.department || 'Other';
+      const total = dept._count;
+      const allocated = allocatedByDepartment.find((a) => a.department === department)?._count || 0;
+      if (department in departmentCountMap) {
+        departmentCountMap[department] = { total, allocated };
+      } else if (department) {
+        departmentCountMap[department] = { total, allocated };
+      }
+    });
+
+    // Build department-wise asset usage with all departments
+    const departmentWiseAssetUsage = definedDepartments.map((department) => {
+      const data = departmentCountMap[department] || { total: 0, allocated: 0 };
+      const utilRate = data.total > 0 ? (data.allocated / data.total) * 100 : 0;
+      return {
+        department,
+        assetCount: data.total,
+        utilizationRate: Math.round(utilRate * 10) / 10,
+      };
+    }).sort((a, b) => b.assetCount - a.assetCount);
 
     // Get asset aging analysis
     const allAssets = await this.prisma.asset.findMany({
@@ -313,13 +356,27 @@ export class ReportsService {
       _count: true,
     });
 
-    const topIdleAssetCategories = idleByCategory
-      .map((cat) => ({
-        category: cat.category,
-        idleCount: cat._count,
-      }))
-      .sort((a, b) => b.idleCount - a.idleCount)
-      .slice(0, 5);
+    // Create a map with all categories initialized to 0
+    const idleCategoryMap: { [key: string]: number } = {};
+    definedCategories.forEach((cat) => {
+      idleCategoryMap[cat] = 0;
+    });
+
+    // Update the map with actual idle data from database
+    idleByCategory.forEach((cat) => {
+      const category = cat.category || 'Uncategorized';
+      if (category in idleCategoryMap) {
+        idleCategoryMap[category] = cat._count;
+      } else if (category) {
+        idleCategoryMap[category] = cat._count;
+      }
+    });
+
+    // Build top idle asset categories with all categories
+    const topIdleAssetCategories = definedCategories.map((category) => ({
+      category,
+      idleCount: idleCategoryMap[category] || 0,
+    })).sort((a, b) => b.idleCount - a.idleCount);
 
     return {
       metrics,
