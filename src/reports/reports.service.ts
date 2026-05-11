@@ -399,6 +399,23 @@ export class ReportsService {
       _count: true,
     });
 
+    // Define all possible priorities that should always appear
+    const definedPriorities = ['LOW', 'MEDIUM', 'HIGH'];
+
+    // Create a map with all priorities initialized to 0
+    const priorityCountMap: { [key: string]: number } = {};
+    definedPriorities.forEach((priority) => {
+      priorityCountMap[priority] = 0;
+    });
+
+    // Update the map with actual data from database
+    maintenanceByPriority.forEach((item) => {
+      const priority = item.priority || 'MEDIUM';
+      if (priority in priorityCountMap) {
+        priorityCountMap[priority] = item._count;
+      }
+    });
+
     // Get asset health by condition
     const assetsByCondition = await this.prisma.audit.groupBy({
       by: ['condition'],
@@ -470,11 +487,11 @@ export class ReportsService {
       },
     ];
 
-    // Build priority distribution
-    const priorityDistribution: PriorityDistributionDto[] = maintenanceByPriority.map(
-      (item) => ({
-        priority: item.priority,
-        count: item._count,
+    // Build priority distribution with all priorities (sorted by priority order)
+    const priorityDistribution: PriorityDistributionDto[] = definedPriorities.map(
+      (priority) => ({
+        priority,
+        count: priorityCountMap[priority],
       }),
     );
 
