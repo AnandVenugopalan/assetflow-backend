@@ -1,5 +1,5 @@
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, VerifyCallback } from 'passport-microsoft';
+import { Strategy } from 'passport-microsoft';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
@@ -22,7 +22,7 @@ export class MicrosoftStrategy extends PassportStrategy(Strategy, 'microsoft') {
 		accessToken: string,
 		refreshToken: string,
 		profile: any,
-		done: VerifyCallback,
+		done: (err: Error | null, user?: any) => void,
 	): Promise<any> {
 		try {
 			const { id: microsoftId, displayName: name, emails } = profile;
