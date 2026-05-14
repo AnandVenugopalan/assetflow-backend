@@ -4,10 +4,10 @@ import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("🚀 Starting seed...");
+  console.log('🚀 Starting seed...');
 
   // ============================
-  // 1️⃣ Seed Users
+  // 1️⃣ Seed Users (idempotent via upsert)
   // ============================
 
   const adminUser = await prisma.user.upsert({
@@ -43,223 +43,275 @@ async function main() {
     },
   });
 
-  console.log("✅ Users seeded");
+  console.log('✅ Users seeded');
 
   // ============================
-  // 2️⃣ Seed Assets (PROCUREMENT)
+  // 2️⃣ Seed Assets (idempotent - skip if already exists)
   // ============================
 
-  const asset1 = await prisma.asset.create({
-    data: {
-      name: 'Dell Laptop XPS 13',
-      category: 'IT Equipment',
-      department: 'Engineering',
-      vendor: 'Dell Inc.',
-      purchaseCost: 1200,
-      purchaseDate: new Date('2024-01-15'),
-      status: 'PROCUREMENT',
-      ownerUserId: managerUser.id,
-    },
+  let asset1 = await prisma.asset.findFirst({
+    where: { name: 'Dell Laptop XPS 13', department: 'Engineering' },
   });
+  if (!asset1) {
+    asset1 = await prisma.asset.create({
+      data: {
+        name: 'Dell Laptop XPS 13',
+        category: 'IT Equipment',
+        department: 'Engineering',
+        vendor: 'Dell Inc.',
+        purchaseCost: 1200,
+        purchaseDate: new Date('2024-01-15'),
+        status: 'PROCUREMENT',
+        ownerUserId: managerUser.id,
+      },
+    });
+  }
 
-  const asset2 = await prisma.asset.create({
-    data: {
-      name: 'Office Desk',
-      category: 'Furniture',
-      department: 'Operations',
-      vendor: 'IKEA',
-      purchaseCost: 300,
-      purchaseDate: new Date('2024-02-01'),
-      status: 'PROCUREMENT',
-      ownerUserId: adminUser.id,
-    },
+  let asset2 = await prisma.asset.findFirst({
+    where: { name: 'Office Desk', department: 'Operations' },
   });
+  if (!asset2) {
+    asset2 = await prisma.asset.create({
+      data: {
+        name: 'Office Desk',
+        category: 'Furniture',
+        department: 'Operations',
+        vendor: 'IKEA',
+        purchaseCost: 300,
+        purchaseDate: new Date('2024-02-01'),
+        status: 'PROCUREMENT',
+        ownerUserId: adminUser.id,
+      },
+    });
+  }
 
-  const asset3 = await prisma.asset.create({
-    data: {
-      name: 'Projector',
-      category: 'AV Equipment',
-      department: 'Marketing',
-      vendor: 'Epson',
-      purchaseCost: 800,
-      purchaseDate: new Date('2024-03-10'),
-      status: 'PROCUREMENT',
-      ownerUserId: managerUser.id,
-    },
+  let asset3 = await prisma.asset.findFirst({
+    where: { name: 'Projector', department: 'Marketing' },
   });
+  if (!asset3) {
+    asset3 = await prisma.asset.create({
+      data: {
+        name: 'Projector',
+        category: 'AV Equipment',
+        department: 'Marketing',
+        vendor: 'Epson',
+        purchaseCost: 800,
+        purchaseDate: new Date('2024-03-10'),
+        status: 'PROCUREMENT',
+        ownerUserId: managerUser.id,
+      },
+    });
+  }
 
-  console.log("✅ Assets seeded");
+  console.log('✅ Assets seeded');
 
   // ============================
-  // 3️⃣ Commissioning
+  // 3️⃣ Commissioning (idempotent)
   // ============================
 
-  await prisma.lifecycle.create({
-    data: {
-      assetId: asset1.id,
-      performedBy: adminUser.id,
-      stage: 'COMMISSIONED',
-      notes: 'Asset commissioned and ready for use',
-      location: 'Engineering Floor 3',
-      scheduledDate: new Date('2024-01-20'),
-    },
+  const commissioned1 = await prisma.lifecycle.findFirst({
+    where: { assetId: asset1.id, stage: 'COMMISSIONED' },
   });
+  if (!commissioned1) {
+    await prisma.lifecycle.create({
+      data: {
+        assetId: asset1.id,
+        performedBy: adminUser.id,
+        stage: 'COMMISSIONED',
+        notes: 'Asset commissioned and ready for use',
+        location: 'Engineering Floor 3',
+        scheduledDate: new Date('2024-01-20'),
+      },
+    });
+    await prisma.asset.update({
+      where: { id: asset1.id },
+      data: { status: 'COMMISSIONED' },
+    });
+  }
 
-  await prisma.asset.update({
-    where: { id: asset1.id },
-    data: { status: 'COMMISSIONED' },
+  const commissioned2 = await prisma.lifecycle.findFirst({
+    where: { assetId: asset2.id, stage: 'COMMISSIONED' },
   });
+  if (!commissioned2) {
+    await prisma.lifecycle.create({
+      data: {
+        assetId: asset2.id,
+        performedBy: managerUser.id,
+        stage: 'COMMISSIONED',
+        notes: 'Commissioned for operations department',
+        location: 'Operations Office',
+        scheduledDate: new Date('2024-02-05'),
+      },
+    });
+    await prisma.asset.update({
+      where: { id: asset2.id },
+      data: { status: 'COMMISSIONED' },
+    });
+  }
 
-  await prisma.lifecycle.create({
-    data: {
-      assetId: asset2.id,
-      performedBy: managerUser.id,
-      stage: 'COMMISSIONED',
-      notes: 'Commissioned for operations department',
-      location: 'Operations Office',
-      scheduledDate: new Date('2024-02-05'),
-    },
+  const commissioned3 = await prisma.lifecycle.findFirst({
+    where: { assetId: asset3.id, stage: 'COMMISSIONED' },
   });
+  if (!commissioned3) {
+    await prisma.lifecycle.create({
+      data: {
+        assetId: asset3.id,
+        performedBy: adminUser.id,
+        stage: 'COMMISSIONED',
+        notes: 'Commissioned for marketing team',
+        location: 'Conference Room A',
+        scheduledDate: new Date('2024-03-15'),
+      },
+    });
+    await prisma.asset.update({
+      where: { id: asset3.id },
+      data: { status: 'COMMISSIONED' },
+    });
+  }
 
-  await prisma.asset.update({
-    where: { id: asset2.id },
-    data: { status: 'COMMISSIONED' },
-  });
-
-  await prisma.lifecycle.create({
-    data: {
-      assetId: asset3.id,
-      performedBy: adminUser.id,
-      stage: 'COMMISSIONED',
-      notes: 'Commissioned for marketing team',
-      location: 'Conference Room A',
-      scheduledDate: new Date('2024-03-15'),
-    },
-  });
-
-  await prisma.asset.update({
-    where: { id: asset3.id },
-    data: { status: 'COMMISSIONED' },
-  });
-
-  console.log("✅ Commissioning stage completed");
+  console.log('✅ Commissioning stage completed');
 
   // ============================
-  // 4️⃣ Operation
+  // 4️⃣ Operation (idempotent)
   // ============================
 
-  await prisma.lifecycle.create({
-    data: {
-      assetId: asset1.id,
-      performedBy: staffUser.id,
-      stage: 'IN_OPERATION',
-      notes: 'Asset now in active operation',
-      location: 'Engineering Floor 3',
-    },
+  const operation1 = await prisma.lifecycle.findFirst({
+    where: { assetId: asset1.id, stage: 'IN_OPERATION' },
   });
+  if (!operation1) {
+    await prisma.lifecycle.create({
+      data: {
+        assetId: asset1.id,
+        performedBy: staffUser.id,
+        stage: 'IN_OPERATION',
+        notes: 'Asset now in active operation',
+        location: 'Engineering Floor 3',
+      },
+    });
+    await prisma.asset.update({
+      where: { id: asset1.id },
+      data: { status: 'IN_OPERATION' },
+    });
+  }
 
-  await prisma.asset.update({
-    where: { id: asset1.id },
-    data: { status: 'IN_OPERATION' },
+  const operation2 = await prisma.lifecycle.findFirst({
+    where: { assetId: asset2.id, stage: 'IN_OPERATION' },
   });
+  if (!operation2) {
+    await prisma.lifecycle.create({
+      data: {
+        assetId: asset2.id,
+        performedBy: staffUser.id,
+        stage: 'IN_OPERATION',
+        notes: 'In use by operations team',
+        location: 'Operations Office',
+      },
+    });
+    await prisma.asset.update({
+      where: { id: asset2.id },
+      data: { status: 'IN_OPERATION' },
+    });
+  }
 
-  await prisma.lifecycle.create({
-    data: {
-      assetId: asset2.id,
-      performedBy: staffUser.id,
-      stage: 'IN_OPERATION',
-      notes: 'In use by operations team',
-      location: 'Operations Office',
-    },
+  const operation3 = await prisma.lifecycle.findFirst({
+    where: { assetId: asset3.id, stage: 'IN_OPERATION' },
   });
+  if (!operation3) {
+    await prisma.lifecycle.create({
+      data: {
+        assetId: asset3.id,
+        performedBy: staffUser.id,
+        stage: 'IN_OPERATION',
+        notes: 'Active in marketing presentations',
+        location: 'Conference Room A',
+      },
+    });
+    await prisma.asset.update({
+      where: { id: asset3.id },
+      data: { status: 'IN_OPERATION' },
+    });
+  }
 
-  await prisma.asset.update({
-    where: { id: asset2.id },
-    data: { status: 'IN_OPERATION' },
-  });
-
-  await prisma.lifecycle.create({
-    data: {
-      assetId: asset3.id,
-      performedBy: staffUser.id,
-      stage: 'IN_OPERATION',
-      notes: 'Active in marketing presentations',
-      location: 'Conference Room A',
-    },
-  });
-
-  await prisma.asset.update({
-    where: { id: asset3.id },
-    data: { status: 'IN_OPERATION' },
-  });
-
-  console.log("✅ Operation stage completed");
+  console.log('✅ Operation stage completed');
 
   // ============================
-  // 5️⃣ Maintenance stage
+  // 5️⃣ Maintenance (idempotent)
   // ============================
 
-  await prisma.maintenance.create({
-    data: {
-      assetId: asset1.id,
-      type: 'PREVENTIVE',
-      status: 'IN_PROGRESS',
-      priority: 'MEDIUM',
-      reportedById: managerUser.id,
-      assignedToId: adminUser.id,
-      scheduledDate: new Date('2024-06-01'),
-      notes: 'Routine maintenance check',
-    },
+  const maintenance1 = await prisma.maintenance.findFirst({
+    where: { assetId: asset1.id, type: 'PREVENTIVE' },
   });
+  if (!maintenance1) {
+    await prisma.maintenance.create({
+      data: {
+        assetId: asset1.id,
+        type: 'PREVENTIVE',
+        status: 'IN_PROGRESS',
+        priority: 'MEDIUM',
+        reportedById: managerUser.id,
+        assignedToId: adminUser.id,
+        scheduledDate: new Date('2024-06-01'),
+        notes: 'Routine maintenance check',
+      },
+    });
+    await prisma.asset.update({
+      where: { id: asset1.id },
+      data: { status: 'MAINTENANCE' },
+    });
+  }
 
-  await prisma.asset.update({
-    where: { id: asset1.id },
-    data: { status: 'MAINTENANCE' },
+  const maintenance2 = await prisma.maintenance.findFirst({
+    where: { assetId: asset2.id, type: 'BREAKDOWN' },
   });
+  if (!maintenance2) {
+    await prisma.maintenance.create({
+      data: {
+        assetId: asset2.id,
+        type: 'BREAKDOWN',
+        status: 'COMPLETED',
+        priority: 'HIGH',
+        reportedById: staffUser.id,
+        assignedToId: managerUser.id,
+        scheduledDate: new Date('2024-05-15'),
+        notes: 'Fixed broken drawer mechanism',
+      },
+    });
+  }
 
-  await prisma.maintenance.create({
-    data: {
-      assetId: asset2.id,
-      type: 'BREAKDOWN',
-      status: 'COMPLETED',
-      priority: 'HIGH',
-      reportedById: staffUser.id,
-      assignedToId: managerUser.id,
-      scheduledDate: new Date('2024-05-15'),
-      notes: 'Fixed broken drawer mechanism',
-    },
-  });
-
-  console.log("✅ Maintenance stage completed");
+  console.log('✅ Maintenance stage completed');
 
   // ============================
-  // 6️⃣ Disposal stage
+  // 6️⃣ Disposal (idempotent)
   // ============================
 
-  await prisma.disposal.create({
-    data: {
-      assetId: asset3.id,
-      requestedById: adminUser.id,
-      reason: 'Outdated technology',
-      description: 'Asset is outdated and no longer needed',
-      method: 'Sale',
-      estimatedValue: 200,
-      salvageValue: 150,
-      status: 'APPROVED',
-    },
+  const disposal1 = await prisma.disposal.findFirst({
+    where: { assetId: asset3.id },
   });
+  if (!disposal1) {
+    await prisma.disposal.create({
+      data: {
+        assetId: asset3.id,
+        requestedById: adminUser.id,
+        reason: 'Outdated technology',
+        description: 'Asset is outdated and no longer needed',
+        method: 'Sale',
+        estimatedValue: 200,
+        salvageValue: 150,
+        status: 'APPROVED',
+      },
+    });
+    await prisma.asset.update({
+      where: { id: asset3.id },
+      data: { status: 'DISPOSAL' },
+    });
+  }
 
-  await prisma.asset.update({
-    where: { id: asset3.id },
-    data: { status: 'DISPOSAL' },
-  });
-
-  console.log("✅ Disposal stage completed");
+  console.log('✅ Disposal stage completed');
 }
 
 main()
   .catch((e) => {
-    console.error("❌ Seeding error:", e);
+    console.error('❌ Seeding error:', e);
     process.exit(1);
   })
   .finally(async () => {
