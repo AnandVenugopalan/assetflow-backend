@@ -7,17 +7,21 @@ async function bootstrap() {
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
 
-  // ✅ ENABLE CORS FOR FRONTEND RUNNING ON PORT 8080
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
+  const port = parseInt(process.env.PORT || '3001', 10);
+
+  // ✅ ENABLE CORS FOR FRONTEND
   app.enableCors({
-    origin: "http://localhost:8080",
+    origin: frontendUrl,
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"],
-    methods: ["GET", "POST", "PATCH", "DELETE"]
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   });
 
-  await app.listen(3000);
+  await app.listen(port);
 
-  console.log("✅ Backend running at http://localhost:3000");
-  console.log("✅ CORS enabled for http://localhost:8080");
+  console.log(`✅ Backend running at http://localhost:${port}`);
+  console.log(`✅ CORS enabled for ${frontendUrl}`);
 }
 bootstrap();
+
