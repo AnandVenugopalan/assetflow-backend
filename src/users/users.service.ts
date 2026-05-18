@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 interface UpdateUserInput {
 	name?: string;
@@ -15,6 +16,19 @@ export class UsersService {
 		return this.prisma.user.findMany({
 			select: { id: true, name: true, email: true, role: true, createdAt: true, updatedAt: true },
 			orderBy: { createdAt: 'desc' },
+		});
+	}
+
+	async create(input: any) {
+		const passwordHash = await bcrypt.hash(input.password, 10);
+		return this.prisma.user.create({
+			data: {
+				name: input.name,
+				email: input.email,
+				role: input.role,
+				passwordHash,
+			},
+			select: { id: true, name: true, email: true, role: true, createdAt: true, updatedAt: true },
 		});
 	}
 
