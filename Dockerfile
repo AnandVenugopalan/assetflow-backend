@@ -11,7 +11,7 @@ ARG DATABASE_URL=postgresql://postgres:postgres@localhost:5432/assetflow?schema=
 COPY package.json package-lock.json ./
 
 # Install all dependencies (including devDependencies for build)
-RUN npm ci
+RUN npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 # Install missing OAuth, config and type packages
 RUN npm install @nestjs/config passport-google-oauth20 passport-microsoft && \
@@ -52,7 +52,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install production dependencies only
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 # Re-install runtime extras needed (not in devDeps)
 RUN npm install @nestjs/config passport-google-oauth20 passport-microsoft
