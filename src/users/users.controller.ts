@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { Roles } from './roles.decorator';
 import { RolesGuard } from './roles.guard';
@@ -40,6 +40,12 @@ export class UsersController {
 	@Roles('ADMIN', 'MANAGER')
 	findAll() {
 		return this.usersService.findAll();
+	}
+
+	@Post()
+	@Roles('ADMIN')
+	create(@Body() dto: any) {
+		return this.usersService.create(dto);
 	}
 
 	@Get('me')
