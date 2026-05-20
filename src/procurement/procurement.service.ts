@@ -128,10 +128,14 @@ export class ProcurementService {
       throw new BadRequestException('Request is not pending clarification');
     }
 
+    const updatedNotes = request.procurementNotes 
+      ? request.procurementNotes + '\n\n[User Response]: ' + updateDto.clarificationResponse 
+      : '[User Response]: ' + updateDto.clarificationResponse;
+
     const updated = await this.prisma.procurementRequest.update({
       where: { id },
       data: {
-        ...updateDto,
+        procurementNotes: updatedNotes,
         status: ProcurementStatus.UNDER_REVIEW,
       },
     });

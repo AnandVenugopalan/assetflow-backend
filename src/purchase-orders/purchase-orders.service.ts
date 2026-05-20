@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AssetsService } from '../assets/assets.service';
 import { CreatePoDto, UpdatePoDto } from './dto/po.dto';
 
 @Injectable()
 export class PurchaseOrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assetsService: AssetsService
+  ) {}
 
   private async generatePoNumber(): Promise<string> {
     const year = new Date().getFullYear();
@@ -69,6 +73,43 @@ export class PurchaseOrdersService {
       where: { id: po.procurementRequestId },
       data: { status: 'ORDERED' },
     });
+
+    return po;
+  }
+
+  async markAsCompleted(id: string) {
+    const po = await this.update(id, { status: 'COMPLETED' });
+    
+    const request = await this.prisma.procurementRequest.findUnique({
+      where: { id: po.procurementRequestId },
+      include: { vendor: true }
+    });
+
+    if (!request) throw new NotFoundException('Procurement Request not found');
+
+    await this.prisma.procurementRequest.update({
+      where: { id: request.id },
+      data: { status: 'COMPLETED' },
+    });
+
+    // Auto-generate Assets based on quantity
+    const quantity = request.quantity || 1;
+    const vendorName = request.vendor?.name || 'Unknown Vendor';
+    const costPerItem = request.approvedAmount ? request.approvedAmount / quantity : 0;
+
+    for (let i = 1; i <= quantity; i++) {
+        await this.assetsService.create({
+            name: `${request.itemName} - ${i}`,
+            category: request.category || 'general',
+            status: 'COMMISSIONED', // Asset is ready
+            vendor: vendorName,
+            purchaseDate: po.date.toISOString(),
+            purchaseCost: costPerItem,
+            department: request.department,
+            procurementRequestId: request.id,
+            description: request.justification,
+        });
+    }
 
     return po;
   }

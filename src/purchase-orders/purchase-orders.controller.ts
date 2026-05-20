@@ -39,4 +39,10 @@ export class PurchaseOrdersController {
   markAsOrdered(@Param('id') id: string) {
     return this.poService.markAsOrdered(id);
   }
+
+  @Patch(':id/completed')
+  @Roles('ADMIN', 'PURCHASE_HEAD', 'MANAGER')
+  markAsCompleted(@Param('id') id: string) {
+    return this.poService.markAsCompleted(id);
+  }
 }
