@@ -57,6 +57,13 @@ export class ProcurementController {
     return this.procurementService.create(createDto, user.userId);
   }
 
+  // Submit Draft
+  @Patch('requests/:id/submit-draft')
+  @Roles('ADMIN', 'DEPARTMENT_USER', 'MANAGER')
+  async submitDraft(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.procurementService.submitDraft(id, user.userId);
+  }
+
   // Step 2: Procurement Review
   @Patch('requests/:id/review')
   @Roles('ADMIN', 'PURCHASE_HEAD')

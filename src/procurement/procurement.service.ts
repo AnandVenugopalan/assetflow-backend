@@ -45,6 +45,20 @@ export class ProcurementService {
     return request;
   }
 
+  async submitDraft(id: string, userId: string) {
+    const request = await this.findOne(id);
+    if (request.status !== ProcurementStatus.DRAFT) {
+      throw new BadRequestException('Only drafts can be submitted');
+    }
+
+    const updated = await this.prisma.procurementRequest.update({
+      where: { id },
+      data: { status: ProcurementStatus.SUBMITTED },
+    });
+    await this.createAuditLog('REQUEST_SUBMITTED', id, userId, request, updated);
+    return updated;
+  }
+
   // Step 1: Department User creates Request
   async create(dto: CreateProcurementRequestDto, userId: string) {
     const request = await this.prisma.procurementRequest.create({
