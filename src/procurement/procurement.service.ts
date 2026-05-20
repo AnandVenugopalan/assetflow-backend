@@ -1,258 +1,147 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
-import { CreateProcurementDto } from './dto/create-procurement.dto';
-import { UpdateProcurementDto } from './dto/update-procurement.dto';
+import { CreateProcurementRequestDto } from './dto/create-enterprise-procurement.dto';
+import { ProcurementReviewDto, FinanceApprovalDto } from './dto/workflow.dto';
+import { ProcurementStatus } from '@prisma/client';
 
 @Injectable()
 export class ProcurementService {
-  constructor(
-    private prisma: PrismaService,
-    private notificationsService: NotificationsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
+
+  private async createAuditLog(action: string, entityId: string, userId: string, oldValue: any, newValue: any) {
+    await this.prisma.systemAuditLog.create({
+      data: {
+        action,
+        entityType: 'ProcurementRequest',
+        entityId,
+        userId,
+        oldValue: oldValue ? JSON.stringify(oldValue) : null,
+        newValue: newValue ? JSON.stringify(newValue) : null,
+      },
+    });
+  }
 
   async findAll() {
     return this.prisma.procurementRequest.findMany({
       orderBy: { createdAt: 'desc' },
+      include: { requestedByUser: { select: { id: true, name: true, email: true } }, vendor: true },
+    });
+  }
+
+  async findMyRequests(userId: string) {
+    return this.prisma.procurementRequest.findMany({
+      where: { requestedByUserId: userId },
+      orderBy: { createdAt: 'desc' },
+      include: { vendor: true },
     });
   }
 
   async findOne(id: string) {
-    return this.prisma.procurementRequest.findUnique({
+    const request = await this.prisma.procurementRequest.findUnique({
       where: { id },
+      include: { vendor: true, purchaseOrders: true, requestedByUser: { select: { id: true, name: true, email: true } } },
     });
+    if (!request) throw new NotFoundException('Procurement Request not found');
+    return request;
   }
 
-  async create(createProcurementDto: CreateProcurementDto, userId: string) {
-    const procurementRequest = await this.prisma.procurementRequest.create({
+  // Step 1: Department User creates Request
+  async create(dto: CreateProcurementRequestDto, userId: string) {
+    const request = await this.prisma.procurementRequest.create({
       data: {
-        ...createProcurementDto,
-        status: 'Pending',
+        ...dto,
         requestedByUserId: userId,
+        status: (dto.status as ProcurementStatus) || ProcurementStatus.DRAFT,
+        requiredDate: dto.requiredDate ? new Date(dto.requiredDate) : null,
       },
     });
 
-    // Send notification to all managers
-    try {
-      await this.notificationsService.sendNotificationToRole('MANAGER', {
-        title: 'New Procurement Request',
-        message: `Admin ${createProcurementDto.requestedBy} has submitted a procurement request for ${createProcurementDto.quantity} ${createProcurementDto.itemName}.`,
-        type: 'PROCUREMENT_REQUEST',
-      });
-    } catch (error) {
-      console.error('Failed to send notification:', error);
-      // Don't throw, as the procurement request was created successfully
-    }
-
-    return procurementRequest;
+    await this.createAuditLog(dto.status === 'SUBMITTED' ? 'REQUEST_SUBMITTED' : 'REQUEST_DRAFTED', request.id, userId, null, request);
+    return request;
   }
 
-  async update(id: string, updateProcurementDto: UpdateProcurementDto) {
-    const currentProcurement = await this.prisma.procurementRequest.findUnique({
+  // Step 2: Procurement Review
+  async procurementReview(id: string, dto: ProcurementReviewDto, userId: string) {
+    const request = await this.findOne(id);
+
+    let nextStatus: ProcurementStatus = ProcurementStatus.UNDER_REVIEW;
+    if (dto.action === 'FORWARD_TO_FINANCE') nextStatus = ProcurementStatus.PENDING_FINANCE_APPROVAL;
+    else if (dto.action === 'REJECT') nextStatus = ProcurementStatus.REJECTED;
+    else if (dto.action === 'REQUEST_CLARIFICATION') nextStatus = ProcurementStatus.CLARIFICATION_REQUESTED;
+
+    const updated = await this.prisma.procurementRequest.update({
       where: { id },
+      data: {
+        vendorId: dto.vendorId,
+        estimatedCost: dto.estimatedCost,
+        expectedDeliveryDate: dto.expectedDeliveryDate ? new Date(dto.expectedDeliveryDate) : null,
+        procurementNotes: dto.procurementNotes,
+        status: nextStatus,
+        ...(dto.action === 'REJECT' ? { rejectionReason: dto.procurementNotes } : {}),
+      },
     });
-    if (!currentProcurement) {
-      throw new Error('Procurement request not found');
-    }
 
-    const updatedProcurement = await this.prisma.procurementRequest.update({
-      where: { id },
-      data: updateProcurementDto,
-    });
-
-    // Send notification to the user who created the request when status changes to APPROVED or REJECTED
-    const statusChanged = currentProcurement.status !== updateProcurementDto.status;
-    if (statusChanged && updatedProcurement.requestedByUserId) {
-      try {
-        if (updateProcurementDto.status === 'APPROVED') {
-          await this.notificationsService.sendNotificationToUser(updatedProcurement.requestedByUserId, {
-            title: 'Procurement Request Approved',
-            message: `Your procurement request for ${updatedProcurement.quantity} ${updatedProcurement.itemName} has been approved by the Manager.`,
-            type: 'PROCUREMENT_APPROVED',
-          });
-        } else if (updateProcurementDto.status === 'REJECTED') {
-          await this.notificationsService.sendNotificationToUser(updatedProcurement.requestedByUserId, {
-            title: 'Procurement Request Rejected',
-            message: `Your procurement request for ${updatedProcurement.quantity} ${updatedProcurement.itemName} has been rejected by the Manager.`,
-            type: 'PROCUREMENT_REJECTED',
-          });
-        }
-      } catch (error) {
-        console.error('Failed to send status change notification:', error);
-        // Don't throw, as the update was successful
-      }
-    }
-
-    // Auto-create assets if status changed to APPROVED
-    if (updateProcurementDto.status === 'APPROVED' && currentProcurement.status !== 'APPROVED') {
-      const quantity = updatedProcurement.quantity || 1;
-      for (let i = 1; i <= quantity; i++) {
-        const assetName = quantity > 1 ? `${updatedProcurement.itemName} - ${i}` : updatedProcurement.itemName;
-        const asset = await this.prisma.asset.create({
-          data: {
-            name: assetName,
-            category: updatedProcurement.category || 'Uncategorized',
-            status: 'COMMISSIONED',
-            vendor: updatedProcurement.vendor,
-            purchaseCost: updatedProcurement.estimatedCost,
-            purchaseDate: new Date(),
-          },
-        });
-
-        // Create lifecycle entry for commissioning
-        await this.prisma.lifecycle.create({
-          data: {
-            assetId: asset.id,
-            stage: 'COMMISSIONED',
-            performedBy: null,
-            notes: `Asset created from approved procurement request ${updatedProcurement.id}`,
-            location: 'Procurement Department',
-          },
-        });
-      }
-    }
-
-    return updatedProcurement;
+    await this.createAuditLog(`PROCUREMENT_REVIEW_${dto.action}`, id, userId, request, updated);
+    return updated;
   }
 
-  async uploadQuotation(id: string, filename: string) {
+  // Step 3: Finance Approval
+  async financeApproval(id: string, dto: FinanceApprovalDto, userId: string) {
+    const request = await this.findOne(id);
+
+    let nextStatus: ProcurementStatus = ProcurementStatus.PENDING_FINANCE_APPROVAL;
+    if (dto.action === 'APPROVE') nextStatus = ProcurementStatus.FINANCE_APPROVED;
+    else if (dto.action === 'REJECT') nextStatus = ProcurementStatus.FINANCE_REJECTED;
+    else if (dto.action === 'SEND_BACK') nextStatus = ProcurementStatus.UNDER_REVIEW;
+
+    const updated = await this.prisma.procurementRequest.update({
+      where: { id },
+      data: {
+        approvedAmount: dto.approvedAmount,
+        financeRemarks: dto.financeRemarks,
+        status: nextStatus,
+        ...(dto.action === 'APPROVE' ? { approvedBy: userId, approvedAt: new Date() } : {}),
+      },
+    });
+
+    await this.createAuditLog(`FINANCE_${dto.action}`, id, userId, request, updated);
+    return updated;
+  }
+
+  async submitClarification(id: string, updateDto: any, userId: string) {
+    const request = await this.findOne(id);
+    if (request.status !== ProcurementStatus.CLARIFICATION_REQUESTED) {
+      throw new BadRequestException('Request is not pending clarification');
+    }
+
+    const updated = await this.prisma.procurementRequest.update({
+      where: { id },
+      data: {
+        ...updateDto,
+        status: ProcurementStatus.UNDER_REVIEW,
+      },
+    });
+
+    await this.createAuditLog('CLARIFICATION_SUBMITTED', id, userId, request, updated);
+    return updated;
+  }
+
+  async uploadDocument(id: string, key: 'quotationFile' | 'technicalEvalFile', filename: string) {
     return this.prisma.procurementRequest.update({
       where: { id },
-      data: { quotationFile: filename },
+      data: { [key]: filename },
     });
   }
 
-  async getVendors() {
-    const vendors = await this.prisma.procurementRequest.findMany({
-      where: { vendor: { not: null } },
-      select: { vendor: true },
-      distinct: ['vendor'],
-    });
-    return vendors.map((v) => v.vendor).filter(Boolean);
-  }
-
-  async getWorkflowStats() {
+  async getDashboardStats() {
     const total = await this.prisma.procurementRequest.count();
-    const pending = await this.prisma.procurementRequest.count({
-      where: { status: 'Pending' },
-    });
-    const approved = await this.prisma.procurementRequest.count({
-      where: { status: 'Approved' },
-    });
-    const ordered = await this.prisma.procurementRequest.count({
-      where: { status: 'Ordered' },
-    });
-    const received = await this.prisma.procurementRequest.count({
-      where: { status: 'Received' },
-    });
+    const pendingReview = await this.prisma.procurementRequest.count({ where: { status: ProcurementStatus.UNDER_REVIEW } });
+    const pendingFinance = await this.prisma.procurementRequest.count({ where: { status: ProcurementStatus.PENDING_FINANCE_APPROVAL } });
+    const approved = await this.prisma.procurementRequest.count({ where: { status: ProcurementStatus.FINANCE_APPROVED } });
+    const rejected = await this.prisma.procurementRequest.count({ where: { status: { in: [ProcurementStatus.REJECTED, ProcurementStatus.FINANCE_REJECTED] } } });
+    const poGenerated = await this.prisma.procurementRequest.count({ where: { status: ProcurementStatus.PO_GENERATED } });
+    const received = await this.prisma.procurementRequest.count({ where: { status: ProcurementStatus.RECEIVED } });
 
-    return { total, pending, approved, ordered, received };
-  }
-
-  async approveRequest(id: string, approverId: string, reason?: string) {
-    const procurement = await this.prisma.procurementRequest.findUnique({
-      where: { id },
-    });
-    if (!procurement) {
-      throw new Error('Procurement request not found');
-    }
-    if (procurement.status !== 'Pending') {
-      throw new Error('Procurement request is not in pending status');
-    }
-
-    // Update procurement
-    const updatedProcurement = await this.prisma.procurementRequest.update({
-      where: { id },
-      data: {
-        status: 'Approved',
-        approvedBy: approverId,
-        approvedAt: new Date(),
-        justification: reason ? `${procurement.justification || ''} Approval note: ${reason}`.trim() : procurement.justification,
-      },
-    });
-
-    // Send notification to the user who created the request
-    if (updatedProcurement.requestedByUserId) {
-      try {
-        await this.notificationsService.sendNotificationToUser(updatedProcurement.requestedByUserId, {
-          title: 'Procurement Request Approved',
-          message: `Your procurement request for ${updatedProcurement.quantity} ${updatedProcurement.itemName} has been approved by the Manager.`,
-          type: 'PROCUREMENT_APPROVED',
-        });
-      } catch (error) {
-        console.error('Failed to send approval notification:', error);
-        // Don't throw, as the approval was successful
-      }
-    }
-
-    // Auto-create assets
-    const quantity = procurement.quantity || 1;
-    const assets: any[] = [];
-    for (let i = 1; i <= quantity; i++) {
-      const assetName = quantity > 1 ? `${procurement.itemName} - ${i}` : procurement.itemName;
-      const asset = await this.prisma.asset.create({
-        data: {
-          name: assetName,
-          category: procurement.category || 'Uncategorized',
-          status: 'COMMISSIONED',
-          ownerUserId: procurement.requestedBy,
-          procurementRequestId: procurement.id,
-          purchaseCost: procurement.estimatedCost,
-          vendor: procurement.vendor,
-        },
-      });
-      assets.push(asset);
-
-      // Create lifecycle entry for commissioning
-      await this.prisma.lifecycle.create({
-        data: {
-          assetId: asset.id,
-          performedBy: approverId,
-          stage: 'COMMISSIONED',
-          notes: `Asset commissioned via approved procurement request ${procurement.id}`,
-          location: 'Procurement Department',
-        },
-      });
-    }
-
-    return { procurement: updatedProcurement, assets };
-  }
-
-  async rejectRequest(id: string, approverId: string, reason?: string) {
-    const procurement = await this.prisma.procurementRequest.findUnique({
-      where: { id },
-    });
-    if (!procurement) {
-      throw new Error('Procurement request not found');
-    }
-    if (procurement.status !== 'Pending') {
-      throw new Error('Procurement request is not in pending status');
-    }
-
-    const updatedProcurement = await this.prisma.procurementRequest.update({
-      where: { id },
-      data: {
-        status: 'Rejected',
-        approvedBy: approverId,
-        approvedAt: new Date(),
-        rejectionReason: reason,
-      },
-    });
-
-    // Send notification to the user who created the request
-    if (updatedProcurement.requestedByUserId) {
-      try {
-        await this.notificationsService.sendNotificationToUser(updatedProcurement.requestedByUserId, {
-          title: 'Procurement Request Rejected',
-          message: `Your procurement request for ${updatedProcurement.quantity} ${updatedProcurement.itemName} has been rejected by the Manager.`,
-          type: 'PROCUREMENT_REJECTED',
-        });
-      } catch (error) {
-        console.error('Failed to send rejection notification:', error);
-        // Don't throw, as the rejection was successful
-      }
-    }
-
-    return updatedProcurement;
+    return { total, pendingReview, pendingFinance, approved, rejected, poGenerated, received };
   }
 }

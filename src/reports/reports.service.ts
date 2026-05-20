@@ -773,7 +773,7 @@ export class ReportsService {
       select: {
         estimatedCost: true,
         category: true,
-        vendor: true,
+        vendorId: true,
         status: true,
         createdAt: true,
       },
@@ -781,9 +781,9 @@ export class ReportsService {
 
     // Calculate current metrics
     const totalRequests = allRequests.length;
-    const approvedRequests = allRequests.filter((r) => r.status === 'Approved').length;
-    const rejectedRequests = allRequests.filter((r) => r.status === 'REJECTED').length;
-    const pendingRequests = allRequests.filter((r) => ['Pending', 'Ordered'].includes(r.status || '')).length;
+    const approvedRequests = allRequests.filter((r) => r.status === 'FINANCE_APPROVED' || r.status === 'COMPLETED').length;
+    const rejectedRequests = allRequests.filter((r) => r.status === 'REJECTED' || r.status === 'FINANCE_REJECTED').length;
+    const pendingRequests = allRequests.filter((r) => ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_FINANCE_APPROVAL', 'ORDERED'].includes(r.status || '')).length;
 
     const totalSpend = allRequests.reduce((sum, req) => sum + (req.estimatedCost || 0), 0);
     const approvalRate = totalRequests > 0 ? (approvedRequests / totalRequests) * 100 : 0;
@@ -793,7 +793,7 @@ export class ReportsService {
     // Calculate previous month metrics for comparison
     const prevMonthSpend = previousMonthRequests.reduce((sum, req) => sum + (req.estimatedCost || 0), 0);
     const prevMonthRequestsCount = previousMonthRequests.length;
-    const prevApprovedCount = previousMonthRequests.filter((r) => r.status === 'Approved').length;
+    const prevApprovedCount = previousMonthRequests.filter((r) => r.status === 'FINANCE_APPROVED' || r.status === 'COMPLETED').length;
 
     // Calculate changes (Real values)
     const totalSpendChange = totalSpend - prevMonthSpend;
@@ -808,8 +808,8 @@ export class ReportsService {
     const avgRequestValueChange = prevMonthRequestsCount > 0 ? avgRequestValue - (prevMonthSpend / prevMonthRequestsCount) : 0;
     const avgRequestValueChangePercent = prevMonthSpend > 0 ? Math.round((((totalSpend / totalRequests) - (prevMonthSpend / prevMonthRequestsCount)) / (prevMonthSpend / prevMonthRequestsCount)) * 100 * 10) / 10 : 0;
     
-    const pendingRequestsChange = pendingRequests - previousMonthRequests.filter((r) => ['Pending', 'Ordered'].includes(r.status || '')).length;
-    const prevClosureRate = prevMonthRequestsCount > 0 ? ((prevApprovedCount + previousMonthRequests.filter((r) => r.status === 'REJECTED').length) / prevMonthRequestsCount) * 100 : 0;
+    const pendingRequestsChange = pendingRequests - previousMonthRequests.filter((r) => ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_FINANCE_APPROVAL', 'ORDERED'].includes(r.status || '')).length;
+    const prevClosureRate = prevMonthRequestsCount > 0 ? ((prevApprovedCount + previousMonthRequests.filter((r) => r.status === 'REJECTED' || r.status === 'FINANCE_REJECTED').length) / prevMonthRequestsCount) * 100 : 0;
     const closureRateChange = closureRate - prevClosureRate;
 
     // Build metrics with REAL change values
@@ -975,16 +975,16 @@ export class ReportsService {
 
     // Get vendor performance data
     const requestsByVendor = await this.prisma.procurementRequest.groupBy({
-      by: ['vendor'],
+      by: ['vendorId'],
       _sum: { estimatedCost: true },
       _count: true,
     });
 
     const vendorPerformance: VendorPerformanceDto[] = requestsByVendor
-      .filter((v) => v.vendor !== null)
+      .filter((v) => v.vendorId !== null)
       .map((v) => ({
-        vendorId: v.vendor as string,
-        vendorName: v.vendor as string,
+        vendorId: v.vendorId as string,
+        vendorName: v.vendorId as string,
         cost: Math.round(v._sum.estimatedCost || 0),
         rating: Math.round((Math.random() * 2 + 3) * 10) / 10, // Mock 3-5 rating
       }))

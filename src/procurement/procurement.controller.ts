@@ -14,9 +14,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { ProcurementService } from './procurement.service';
-import { CreateProcurementDto } from './dto/create-procurement.dto';
-import { UpdateProcurementDto } from './dto/update-procurement.dto';
-import { ApproveProcurementDto } from './dto/approve-procurement.dto';
+import { CreateProcurementRequestDto } from './dto/create-enterprise-procurement.dto';
+import { ProcurementReviewDto, FinanceApprovalDto } from './dto/workflow.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../users/roles.decorator';
 import { RolesGuard } from '../users/roles.guard';
@@ -34,47 +33,53 @@ export class ProcurementController {
   constructor(private readonly procurementService: ProcurementService) {}
 
   @Get('requests')
-  @Roles('ADMIN', 'MANAGER', 'USER')
+  @Roles('ADMIN', 'MANAGER', 'USER', 'PURCHASE_HEAD', 'FINANCE_MANAGER', 'DEPARTMENT_USER')
   async findAll() {
-    try {
-      return await this.procurementService.findAll();
-    } catch (error) {
-      throw new HttpException('Failed to fetch procurement requests', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    return this.procurementService.findAll();
+  }
+
+  @Get('requests/my-requests')
+  @Roles('ADMIN', 'MANAGER', 'USER', 'PURCHASE_HEAD', 'FINANCE_MANAGER', 'DEPARTMENT_USER')
+  async findMyRequests(@CurrentUser() user: { userId: string }) {
+    return this.procurementService.findMyRequests(user.userId);
   }
 
   @Get('requests/:id')
-  @Roles('ADMIN', 'MANAGER', 'USER')
+  @Roles('ADMIN', 'MANAGER', 'USER', 'PURCHASE_HEAD', 'FINANCE_MANAGER', 'DEPARTMENT_USER')
   async findOne(@Param('id') id: string) {
-    try {
-      return await this.procurementService.findOne(id);
-    } catch (error) {
-      throw new HttpException('Procurement request not found', HttpStatus.NOT_FOUND);
-    }
+    return this.procurementService.findOne(id);
   }
 
+  // Step 1: Create Request (Draft or Submitted)
   @Post('requests')
-  @Roles('ADMIN', 'MANAGER')
-  async create(@Body() createProcurementDto: CreateProcurementDto, @CurrentUser() user: { userId: string }) {
-    try {
-      return await this.procurementService.create(createProcurementDto, user.userId);
-    } catch (error) {
-      throw new HttpException('Failed to create procurement request', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+  @Roles('ADMIN', 'DEPARTMENT_USER', 'MANAGER')
+  async create(@Body() createDto: CreateProcurementRequestDto, @CurrentUser() user: { userId: string }) {
+    return this.procurementService.create(createDto, user.userId);
   }
 
-  @Patch('requests/:id')
-  @Roles('ADMIN', 'MANAGER')
-  async update(@Param('id') id: string, @Body() updateProcurementDto: UpdateProcurementDto) {
-    try {
-      return await this.procurementService.update(id, updateProcurementDto);
-    } catch (error) {
-      throw new HttpException('Failed to update procurement request', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+  // Step 2: Procurement Review
+  @Patch('requests/:id/review')
+  @Roles('ADMIN', 'PURCHASE_HEAD')
+  async procurementReview(@Param('id') id: string, @Body() reviewDto: ProcurementReviewDto, @CurrentUser() user: { userId: string }) {
+    return this.procurementService.procurementReview(id, reviewDto, user.userId);
+  }
+
+  // Step 3: Finance Approval
+  @Patch('requests/:id/finance-approval')
+  @Roles('ADMIN', 'FINANCE_MANAGER')
+  async financeApproval(@Param('id') id: string, @Body() approvalDto: FinanceApprovalDto, @CurrentUser() user: { userId: string }) {
+    return this.procurementService.financeApproval(id, approvalDto, user.userId);
+  }
+
+  // Re-submit Clarification
+  @Patch('requests/:id/submit-clarification')
+  @Roles('ADMIN', 'DEPARTMENT_USER', 'MANAGER')
+  async submitClarification(@Param('id') id: string, @Body() updateDto: any, @CurrentUser() user: { userId: string }) {
+    return this.procurementService.submitClarification(id, updateDto, user.userId);
   }
 
   @Post('requests/:id/quotation')
-  @Roles('ADMIN', 'MANAGER')
+  @Roles('ADMIN', 'PURCHASE_HEAD')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -87,50 +92,33 @@ export class ProcurementController {
     }),
   )
   async uploadQuotation(@Param('id') id: string, @UploadedFile() file: any) {
-    try {
-      return await this.procurementService.uploadQuotation(id, file.filename);
-    } catch (error) {
-      throw new HttpException('Failed to upload quotation', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    if (!file) throw new HttpException('File not found', HttpStatus.BAD_REQUEST);
+    return this.procurementService.uploadDocument(id, 'quotationFile', file.filename);
   }
 
-  @Get('vendors')
-  @Roles('ADMIN', 'MANAGER', 'USER')
-  async getVendors() {
-    try {
-      return await this.procurementService.getVendors();
-    } catch (error) {
-      throw new HttpException('Failed to fetch vendors', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+  @Post('requests/:id/technical-eval')
+  @Roles('ADMIN', 'PURCHASE_HEAD')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/documents',
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, uniqueSuffix + '-' + file.originalname);
+        },
+      }),
+    }),
+  )
+  async uploadTechnicalEval(@Param('id') id: string, @UploadedFile() file: any) {
+    if (!file) throw new HttpException('File not found', HttpStatus.BAD_REQUEST);
+    return this.procurementService.uploadDocument(id, 'technicalEvalFile', file.filename);
   }
 
-  @Get('workflow-stats')
-  @Roles('ADMIN', 'MANAGER', 'USER')
-  async getWorkflowStats() {
-    try {
-      return await this.procurementService.getWorkflowStats();
-    } catch (error) {
-      throw new HttpException('Failed to fetch workflow stats', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  @Patch('requests/:id/approve')
-  @Roles('MANAGER')
-  async approve(@Param('id') id: string, @Body() dto: ApproveProcurementDto, @CurrentUser() user: { userId: string }) {
-    try {
-      return await this.procurementService.approveRequest(id, user.userId, dto.reason);
-    } catch (error) {
-      throw new HttpException(error.message || 'Failed to approve procurement request', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  @Patch('requests/:id/reject')
-  @Roles('MANAGER')
-  async reject(@Param('id') id: string, @Body() dto: ApproveProcurementDto, @CurrentUser() user: { userId: string }) {
-    try {
-      return await this.procurementService.rejectRequest(id, user.userId, dto.reason);
-    } catch (error) {
-      throw new HttpException(error.message || 'Failed to reject procurement request', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+  // Dashboard Stats
+  @Get('dashboard-stats')
+  @Roles('ADMIN', 'MANAGER', 'USER', 'PURCHASE_HEAD', 'FINANCE_MANAGER', 'DEPARTMENT_USER')
+  async getDashboardStats() {
+    return this.procurementService.getDashboardStats();
   }
 }
+

@@ -21,6 +21,39 @@ async function main() {
     },
   });
 
+  const purchaseHeadUser = await prisma.user.upsert({
+    where: { email: 'purchase@assetflow.com' },
+    update: {},
+    create: {
+      name: 'Purchase Head',
+      email: 'purchase@assetflow.com',
+      passwordHash: await bcrypt.hash('purchase123', 10),
+      role: 'PURCHASE_HEAD',
+    },
+  });
+
+  const financeManagerUser = await prisma.user.upsert({
+    where: { email: 'finance@assetflow.com' },
+    update: {},
+    create: {
+      name: 'Finance Manager',
+      email: 'finance@assetflow.com',
+      passwordHash: await bcrypt.hash('finance123', 10),
+      role: 'FINANCE_MANAGER',
+    },
+  });
+
+  const deptUser = await prisma.user.upsert({
+    where: { email: 'dept@assetflow.com' },
+    update: {},
+    create: {
+      name: 'Department User',
+      email: 'dept@assetflow.com',
+      passwordHash: await bcrypt.hash('dept123', 10),
+      role: 'DEPARTMENT_USER',
+    },
+  });
+
   const managerUser = await prisma.user.upsert({
     where: { email: 'manager@assetflow.com' },
     update: {},
