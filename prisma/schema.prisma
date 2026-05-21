@@ -8,10 +8,32 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- Procurement Feature Enums ---
+enum ProcurementStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  CLARIFICATION_REQUESTED
+  PENDING_FINANCE_APPROVAL
+  FINANCE_APPROVED
+  FINANCE_REJECTED
+  PO_GENERATED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  ASSET_REGISTERED
+  COMPLETED
+  REJECTED
+}
+
+// --- User Roles Ext --- 
 enum UserRole {
   ADMIN
   MANAGER
   USER
+  PURCHASE_HEAD
+  FINANCE_MANAGER
+  DEPARTMENT_USER
 }
 
 enum AssetStatus {
@@ -264,26 +286,98 @@ model PropertyDocument {
 
 model ProcurementRequest {
   id                String    @id @default(uuid())
+  requestTitle      String?
   itemName          String
   category          String?
+  assetType         String?
+  department        String?
   quantity          Int?
   estimatedCost     Float?
-  vendor            String?
-  requestedBy       String?
-  requestedByUserId String?
-  status            String?   // Pending, Approved, Ordered, Received
+  expectedDeliveryDate DateTime?
+  requiredDate      DateTime?
+  status            ProcurementStatus @default(DRAFT)
   priority          String?
   justification     String?
+  technicalSpecs    String?
+  
+  // File attachments
   quotationFile     String?
+  technicalEvalFile String?
+
+  // Remarks and Notes
+  procurementNotes  String?
+  financeRemarks    String?
+  approvedAmount    Float?
+
+  // Relations
+  vendorId          String?
+  vendor            Vendor?   @relation(fields: [vendorId], references: [id])
+  
+  requestedBy       String?
+  requestedByUserId String?
+  requestedByUser   User?     @relation("ProcurementRequests", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  
   approvedBy        String?
   approvedAt        DateTime?
   rejectionReason   String?
+
+  assets            Asset[]
+  purchaseOrders    PurchaseOrder[]
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+}
 
-  // Relations
-  requestedByUser   User?     @relation("ProcurementRequests", fields: [requestedByUserId], references: [id], onDelete: SetNull)
-  assets            Asset[]
+model Vendor {
+  id                String    @id @default(uuid())
+  name              String
+  contactPerson     String?
+  email             String?
+  phone             String?
+  address           String?
+  gstNumber         String?
+  rating            Float?    @default(0)
+  isPreferred       Boolean   @default(false)
+  isActive          Boolean   @default(true)
+
+  procurementRequests ProcurementRequest[]
+  purchaseOrders      PurchaseOrder[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model PurchaseOrder {
+  id                    String    @id @default(uuid())
+  poNumber              String    @unique
+  date                  DateTime
+  expectedDelivery      DateTime?
+  approvedAmount        Float?
+  paymentTerms          String?
+  poFilePath            String?
+  status                String?   // e.g. Generated, Issued, Cancelled
+
+  vendorId              String
+  vendor                Vendor    @relation(fields: [vendorId], references: [id])
+  
+  procurementRequestId  String
+  procurementRequest    ProcurementRequest @relation(fields: [procurementRequestId], references: [id])
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model SystemAuditLog {
+  id          String   @id @default(uuid())
+  action      String   // e.g., UPDATE_PROCUREMENT_STATUS
+  entityType  String   // e.g., ProcurementRequest
+  entityId    String
+  userId      String?
+  oldValue    String?  // JSON stringified
+  newValue    String?  // JSON stringified
+  ipAddress   String?
+  deviceInfo  String?
+  createdAt   DateTime @default(now())
 }
 
 model Request {

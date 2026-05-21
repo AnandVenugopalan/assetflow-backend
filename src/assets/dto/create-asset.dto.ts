@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, IsDateString } from 'class-validator';
+﻿import { IsIn, IsNumber, IsOptional, IsString, IsDateString } from 'class-validator';
 
 export class CreateAssetDto {
 	@IsString()
@@ -50,6 +50,11 @@ export class CreateAssetDto {
 	@IsOptional()
 	@IsString()
 	qrCode?: string; // QR code number (e.g., "100009" or "000100")
+
+        @IsOptional()
+        @IsString()
+        procurementRequestId?: string;
 }
+
 
 
